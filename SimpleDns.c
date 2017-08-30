@@ -629,6 +629,14 @@ void Message_unpackage(struct Message *msg, const uint8_t *buffer, size_t *len)
 	return;
 }
 
+struct ResourceRecord *RR_soa_create(const char *mname, const char *rname, uint32_t serial)
+{
+	struct ResourceRecord *tmp = NULL;
+	tmp = malloc(sizeof(struct ResourceRecord));
+
+	return tmp;
+}
+
 // For every question in the message add a appropiate resource record
 // in either section 'answers', 'authorities' or 'additionals'.
 
@@ -687,6 +695,14 @@ int Message_resolve(struct Message *msg)
 				rr->rd_data.cname_record.name = strdup("aa.b.com");
 				break;
 			case RR_SOA:
+				rr->rd_length = strlen(" ns1.b.com  root.b.com ") + 20;
+				rr->rd_data.soa_record.MName = strdup("ns1.b.com");
+				rr->rd_data.soa_record.RName = strdup("root.b.com");
+				rr->rd_data.soa_record.serial = 20171820;
+				rr->rd_data.soa_record.refresh = 3600;
+				rr->rd_data.soa_record.retry = 720;
+				rr->rd_data.soa_record.expire = 3600;
+				rr->rd_data.soa_record.minimum = 300;
 				break;
 			/*
 			case NS_RR:
@@ -744,6 +760,16 @@ int encode_resource_records(struct ResourceRecord* rr, uint8_t** buffer)
 				break;
 			case RR_NS:
 				putcname(buffer, rr->rd_data.ns_record.name);
+				break;
+			case RR_SOA:
+				putcname(buffer, "ns1.b.com");   /* Author Name Server */
+				putcname(buffer, "root.b.com");  /* mail of DNS */
+				put32bits(buffer, 2017182012);   /* serial */
+				put32bits(buffer, 3600); /* refresh */
+				put32bits(buffer, 3600); /* retry */
+				put32bits(buffer, 3600); /* expire */
+				put32bits(buffer, 3600); /* minimum */
+	
 				break;
 			default:
 				fprintf(stderr, "Unknown type %u. => Ignore resource record.\n", rr->type);
