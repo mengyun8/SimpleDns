@@ -13,6 +13,13 @@
 #define BUF_SIZE 	1500
 #define DOMAINLEN	256
 
+/* These values are taken from RFC1537 */
+#define DEFAULT_REFRESH     (60 * 60 * 8)
+#define DEFAULT_RETRY       (60 * 60 * 2)
+#define DEFAULT_EXPIRE      (60 * 60 * 24 * 7)
+#define DEFAULT_MINIMUM     (60 * 60 * 24)
+
+
 /*
 * This software is licensed under the CC0.
 *
@@ -637,11 +644,24 @@ struct ResourceRecord *RR_soa_create(const char *mname, const char *rname, uint3
 	return tmp;
 }
 
+int Resolve_Record(const char *zone, const char *name, uint32_t *type, char *rdata, uint32_t *ttl)
+{
+	
+	return 0;
+}
+
+int Resolve_SOA(const char *zone, const char *name, char *mname, char *rname, uint32_t *serial)
+{
+	sprintf(mname, "ns1.%s", zone);
+	sprintf(rname, "root.%s", zone);
+	*serial = 2017083016;
+	return 0;
+}
+
 // For every question in the message add a appropiate resource record
 // in either section 'answers', 'authorities' or 'additionals'.
 
 int Message_resolve(struct Message *msg)
-//void resolver_process(struct Message* msg)
 {
 	struct ResourceRecord* beg;
 	struct ResourceRecord* rr;
@@ -698,11 +718,11 @@ int Message_resolve(struct Message *msg)
 				rr->rd_length = strlen(" ns1.b.com  root.b.com ") + 20;
 				rr->rd_data.soa_record.MName = strdup("ns1.b.com");
 				rr->rd_data.soa_record.RName = strdup("root.b.com");
-				rr->rd_data.soa_record.serial = 20171820;
-				rr->rd_data.soa_record.refresh = 3600;
-				rr->rd_data.soa_record.retry = 720;
-				rr->rd_data.soa_record.expire = 3600;
-				rr->rd_data.soa_record.minimum = 300;
+				rr->rd_data.soa_record.serial = 2017182013;
+				rr->rd_data.soa_record.refresh = DEFAULT_REFRESH;
+				rr->rd_data.soa_record.retry = DEFAULT_RETRY;
+				rr->rd_data.soa_record.expire = DEFAULT_EXPIRE;
+				rr->rd_data.soa_record.minimum = DEFAULT_MINIMUM;
 				break;
 			/*
 			case NS_RR:
@@ -719,15 +739,12 @@ int Message_resolve(struct Message *msg)
 		}
 
 		msg->anCount++;
-
 		// prepend resource record to answers list
 		beg = msg->answers;
 		msg->answers = rr;
 		rr->next = beg;
-
 		//jump here to omit question
 next:
-		
 		// process next question
 		q = q->next;
 	}
@@ -738,8 +755,8 @@ int encode_resource_records(struct ResourceRecord* rr, uint8_t** buffer)
 	int i;
 	while(rr)
 	{
-		// Answer questions by attaching resource sections.
-		encode_domain_name(buffer, rr->name);
+		/* Answer questions by attaching resource sections. */
+		putcname(buffer, rr->name);
 		put16bits(buffer, rr->type);
 		put16bits(buffer, rr->class);
 		put32bits(buffer, rr->ttl);
@@ -762,14 +779,13 @@ int encode_resource_records(struct ResourceRecord* rr, uint8_t** buffer)
 				putcname(buffer, rr->rd_data.ns_record.name);
 				break;
 			case RR_SOA:
-				putcname(buffer, "ns1.b.com");   /* Author Name Server */
-				putcname(buffer, "root.b.com");  /* mail of DNS */
-				put32bits(buffer, 2017182012);   /* serial */
-				put32bits(buffer, 3600); /* refresh */
-				put32bits(buffer, 3600); /* retry */
-				put32bits(buffer, 3600); /* expire */
-				put32bits(buffer, 3600); /* minimum */
-	
+				putcname(buffer, rr->rd_data.soa_record.MName);   /* Author Name Server */
+				putcname(buffer, rr->rd_data.soa_record.RName);  /* mail of DNS */
+				put32bits(buffer, rr->rd_data.soa_record.serial);   /* serial */
+				put32bits(buffer, rr->rd_data.soa_record.refresh); /* refresh */
+				put32bits(buffer, rr->rd_data.soa_record.retry); /* retry */
+				put32bits(buffer, rr->rd_data.soa_record.expire); /* expire */
+				put32bits(buffer, rr->rd_data.soa_record.minimum); /* minimum */
 				break;
 			default:
 				fprintf(stderr, "Unknown type %u. => Ignore resource record.\n", rr->type);
