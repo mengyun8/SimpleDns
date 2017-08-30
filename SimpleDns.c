@@ -39,25 +39,30 @@ static const uint32_t RCODE_MASK = 0x000F;
 
 /* Response Type */
 enum {
-	Ok_ResponseType = 0,
-	FormatError_ResponseType = 1,
-	ServerFailure_ResponseType = 2,
-	NameError_ResponseType = 3,
-	NotImplemented_ResponseType = 4,
-	Refused_ResponseType = 5
+	RT_NoError = 0,
+	RT_FormErr = 1,
+	RT_ServFail = 2,
+	RT_NxDomain = 3,
+	RT_NotImp = 4,
+	RT_Refused = 5,
+	RT_YXDomain = 6,
+	RT_YXRRSet = 7,
+	RT_NXRRSet = 8,
+	RT_NotAuth = 9,
+	RT_NotZone = 10
 };
 
 /* Resource Record Types */
 enum {
-	A_Resource_RecordType = 1,
-	NS_Resource_RecordType = 2,
-	CNAME_Resource_RecordType = 5,
-	SOA_Resource_RecordType = 6,
-	PTR_Resource_RecordType = 12,
-	MX_Resource_RecordType = 15,
-	TXT_Resource_RecordType = 16,
-	AAAA_Resource_RecordType = 28,
-	SRV_Resource_RecordType = 33
+	RR_A = 1,
+	RR_NS = 2,
+	RR_CNAME = 5,
+	RR_SOA = 6,
+	RR_PTR = 12,
+	RR_MX = 15,
+	RR_TXT = 16,
+	RR_AAAA = 28,
+	RR_SRV = 33
 };
 
 /* Operation Code */
@@ -117,7 +122,7 @@ union ResourceData {
 	} soa_record;
 	struct {
 		char *name;
-	} name_server_record;
+	} ns_record;
 	struct {
 		char *name;
 	} cname_record;
@@ -256,7 +261,7 @@ void print_resource_record(struct ResourceRecord* rr)
 		union ResourceData *rd = &rr->rd_data;
 		switch(rr->type)
 		{
-			case A_Resource_RecordType:
+			case RR_A:
 				printf("Address Resource Record { address ");
 			
 				for(i = 0; i < 4; ++i)
@@ -264,17 +269,17 @@ void print_resource_record(struct ResourceRecord* rr)
 			
 				printf(" }");
 				break;
-			case NS_Resource_RecordType:
+			case RR_NS:
 				printf("Name Server Resource Record { name %u}",
-					rd->name_server_record.name
+					rd->ns_record.name
 				);
 				break;
-			case CNAME_Resource_RecordType:
+			case RR_CNAME:
 				printf("Canonical Name Resource Record { name %u}",
 					rd->cname_record.name
 				);
 				break;
-			case SOA_Resource_RecordType:
+			case RR_SOA:
 				printf("SOA { MName '%s', RName '%s', serial %u, refresh %u, retry %u, expire %u, minimum %u }",
 					rd->soa_record.MName,
 					rd->soa_record.RName,
@@ -285,23 +290,23 @@ void print_resource_record(struct ResourceRecord* rr)
 					rd->soa_record.minimum
 				);
 				break;
-			case PTR_Resource_RecordType:
+			case RR_PTR:
 				printf("Pointer Resource Record { name '%s' }",
 					rd->ptr_record.name
 				);
 				break;
-			case MX_Resource_RecordType:
+			case RR_MX:
 				printf("Mail Exchange Record { preference %u, exchange '%s' }",
 					rd->mx_record.preference,
 					rd->mx_record.exchange
 				);
 				break;
-			case TXT_Resource_RecordType:
+			case RR_TXT:
 				printf("Text Resource Record { txt_data '%s' }",
 					rd->txt_record.txt_data
 				);
 				break;
-			case AAAA_Resource_RecordType:
+			case RR_AAAA:
 				printf("AAAA Resource Record { address ");
 			
 				for(i = 0; i < 16; ++i)
@@ -395,6 +400,37 @@ void put32bits( uint8_t** buffer, uint32_t value ) {
 	*buffer += 4;
 }
 
+void putcname(uint8_t** buffer, const uint8_t* domain)
+{
+	uint8_t* buf = *buffer;
+	const uint8_t* beg = domain;
+	const uint8_t* pos;
+	int len = 0;
+	int i = 0;
+
+	while(pos = strchr(beg, '.'))
+	{
+		len = pos - beg;
+		buf[i] = len;
+		i += 1;
+		memcpy(buf+i, beg, len);
+		i += len;
+
+		beg = pos + 1;
+	}
+	len = strlen(domain) - (beg - domain);
+
+	buf[i] = len;
+	i += 1;
+	memcpy(buf + i, beg, len);
+	i += len;
+
+	buf[i] = 0;
+	i += 1;
+	*buffer += i;
+}
+
+
 
 /*
 * Deconding/Encoding functions.
@@ -466,7 +502,6 @@ void encode_domain_name(uint8_t** buffer, const uint8_t* domain)
 
 	*buffer += i;
 }
-
 
 void Message_decode_header(struct Message* msg, const uint8_t** buffer)
 {
@@ -609,7 +644,7 @@ int Message_resolve(struct Message *msg)
 	msg->qr = 1; // this is a response
 	msg->aa = 1; // this server is authoritative
 	msg->ra = 0; // no recursion available
-	msg->rcode = Ok_ResponseType;
+	msg->rcode = RT_NoError;
 
 	//should already be 0
 	msg->anCount = 0;
@@ -618,7 +653,7 @@ int Message_resolve(struct Message *msg)
 
 	//for every question append resource records
 	q = msg->questions;
-	while(q)
+	while (q)
 	{
 		rr = malloc(sizeof(struct ResourceRecord));
 
@@ -627,7 +662,7 @@ int Message_resolve(struct Message *msg)
 		rr->class = q->qClass;
 		rr->ttl = (long)60 * 60; //in seconds; 0 means no caching
 		
-		printf("Query for '%s'\n", q->qName);
+		printf("Query for '%s' type '%d'\n", q->qName,  q->qType);
 		
 		// We only can only answer two question types so far
 		// and the answer (resource records) will be all put
@@ -635,28 +670,34 @@ int Message_resolve(struct Message *msg)
 		// This behavior is probably non-standard!
 		switch(q->qType)
 		{
-			case A_Resource_RecordType:
+			case RR_A:
 				rr->rd_length = 4;
 				rc = get_A_Record(rr->rd_data.a_record.addr, q->qName);
 				if(rc < 0)
 					goto next;
 				break;
-			case AAAA_Resource_RecordType:
+			case RR_AAAA:
 				rr->rd_length = 16;
 				rc = get_AAAA_Record(rr->rd_data.aaaa_record.addr, q->qName);
 				if(rc < 0)
 					goto next;
 				break;
+			case RR_CNAME:
+				rr->rd_length = strlen("aa.b.com") + 2;
+				rr->rd_data.cname_record.name = strdup("aa.b.com");
+				break;
+			case RR_SOA:
+				break;
 			/*
-			case NS_Resource_RecordType:
-			case CNAME_Resource_RecordType:
-			case SOA_Resource_RecordType:
-			case PTR_Resource_RecordType:
-			case MX_Resource_RecordType:
-			case TXT_Resource_RecordType:
+			case NS_RR:
+			case CNAME_RR:
+			case SOA_RR:
+			case PTR_RR:
+			case MX_RR:
+			case TXT_RR:
 			*/
 			default:
-				msg->rcode = NotImplemented_ResponseType;
+				msg->rcode = RT_NotImp;
 				printf("Cannot answer question of type %d.\n", q->qType);
 				goto next;
 		}
@@ -690,15 +731,19 @@ int encode_resource_records(struct ResourceRecord* rr, uint8_t** buffer)
 		
 		switch(rr->type)
 		{
-			case A_Resource_RecordType:
+			case RR_A:
 				for(i = 0; i < 4; ++i)
 					put8bits(buffer, rr->rd_data.a_record.addr[i]);
 				break;
-			case AAAA_Resource_RecordType:
+			case RR_AAAA:
 				for(i = 0; i < 16; ++i)
 					put8bits(buffer, rr->rd_data.aaaa_record.addr[i]);
 				break;
-			case CNAME_Resource_RecordType:
+			case RR_CNAME:
+				putcname(buffer, rr->rd_data.cname_record.name);
+				break;
+			case RR_NS:
+				putcname(buffer, rr->rd_data.ns_record.name);
 				break;
 			default:
 				fprintf(stderr, "Unknown type %u. => Ignore resource record.\n", rr->type);
