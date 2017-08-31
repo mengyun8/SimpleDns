@@ -674,7 +674,7 @@ int Resolve_SOA_Record(struct ResourceRecord* rr)
 	return 0;
 }
 
-int Resolve_ResourceRecord(struct ResourceRecord* rr)
+int ResourceRecord_Resolve(struct ResourceRecord* rr)
 {
 	int	rc = 0;
 
@@ -730,6 +730,28 @@ int Resolve_ResourceRecord(struct ResourceRecord* rr)
 	return 0;
 }
 
+struct ResourceRecord  *ResourceRecord_Create(const char *name, uint16_t type, uint16_t class)
+{
+	struct ResourceRecord *tmp = NULL;
+
+	tmp = malloc(sizeof(struct ResourceRecord));
+	memset(tmp, 0, sizeof(struct ResourceRecord));
+	tmp->name = strdup(name);
+	tmp->type = type;
+	tmp->class = class;
+	tmp->next = NULL;
+	return tmp;
+}
+
+void ResourceRecord_add(struct Message *msg, struct ResourceRecord* rr)
+{
+	struct ResourceRecord *tmp = NULL;
+	tmp = msg->answers;
+	msg->answers = rr;
+	rr->next = tmp;
+	msg->anCount ++;
+}
+
 // For every question in the message add a appropiate resource record
 // in either section 'answers', 'authorities' or 'additionals'.
 int Message_resolve(struct Message *msg)
@@ -754,22 +776,28 @@ int Message_resolve(struct Message *msg)
 	q = msg->questions;
 	while (q)
 	{
-		rr = malloc(sizeof(struct ResourceRecord));
+		rr = ResourceRecord_Create(q->qName, q->qType, q->qClass);
+#if 0
+		malloc(sizeof(struct ResourceRecord));
 		memset(rr, 0, sizeof(struct ResourceRecord));
 		rr->name = strdup(q->qName);
 		rr->type = q->qType;
 		rr->class = q->qClass;
-		if (Resolve_ResourceRecord(rr) < 0)
+#endif
+		if (ResourceRecord_Resolve(rr) < 0)
 		{
 			msg->rcode = RT_NotImp;
 			break;
 		}
+		ResourceRecord_add(msg, rr);
+#if 0
 		msg->anCount++;
 		// prepend resource record to answers list
 		beg = msg->answers;
 		msg->answers = rr;
 		rr->next = beg;
 		//jump here to omit question
+#endif
 next:
 		// process next question
 		q = q->next;
