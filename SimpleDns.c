@@ -761,6 +761,10 @@ int Message_resolve(struct Message *msg)
 	struct Question* q;
 	int rc;
 
+	char		qname[256] = {0};
+	uint16_t	type = 0;
+	uint16_t	class = 0;
+
 	// leave most values intact for response
 	msg->qr = 1; // this is a response
 	msg->aa = 1; // this server is authoritative
@@ -774,34 +778,30 @@ int Message_resolve(struct Message *msg)
 
 	//for every question append resource records
 	q = msg->questions;
+	strcpy(qname, q->qName);
+	type = q->qType;
+	class = q->qClass;
+
 	while (q)
 	{
-		rr = ResourceRecord_Create(q->qName, q->qType, q->qClass);
-#if 0
-		malloc(sizeof(struct ResourceRecord));
-		memset(rr, 0, sizeof(struct ResourceRecord));
-		rr->name = strdup(q->qName);
-		rr->type = q->qType;
-		rr->class = q->qClass;
-#endif
+find_cname:
+		rr = ResourceRecord_Create(qname, type, class);
+
 		if (ResourceRecord_Resolve(rr) < 0)
 		{
 			msg->rcode = RT_NotImp;
 			break;
 		}
 		ResourceRecord_add(msg, rr);
-#if 0
-		msg->anCount++;
-		// prepend resource record to answers list
-		beg = msg->answers;
-		msg->answers = rr;
-		rr->next = beg;
-		//jump here to omit question
-#endif
-next:
+		if (rr->type != type && rr->type == RR_CNAME)
+		{
+			strcpy(qname, rr->rd_data.cname_record.name);
+			goto find_cname;
+		}
 		// process next question
 		q = q->next;
 	}
+	return 0;
 }
 
 int encode_resource_records(struct ResourceRecord* rr, uint8_t** buffer)
