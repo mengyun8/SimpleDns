@@ -116,7 +116,8 @@ union ResourceData {
 		char *txt_data;
 	} txt_record;
 	struct {
-		uint8_t addr[4];
+		//uint8_t addr[4];
+		struct in_addr addr;
 	} a_record;
 	struct {
 		char* MName;
@@ -141,7 +142,8 @@ union ResourceData {
 		char *exchange;
 	} mx_record;
 	struct {
-		uint8_t addr[16];
+		//uint8_t addr[16];
+		struct in6_addr addr;
 	} aaaa_record;
 	struct {
 		uint16_t priority;
@@ -153,7 +155,8 @@ union ResourceData {
 
 /* Resource Record Section */
 struct ResourceRecord {
-	char *name;
+	char 	*name;
+	char	*origin;
 	uint16_t type;
 	uint16_t class;
 	uint32_t ttl;
@@ -271,8 +274,9 @@ void print_resource_record(struct ResourceRecord* rr)
 			case RR_A:
 				printf("Address Resource Record { address ");
 			
-				for(i = 0; i < 4; ++i)
-					printf("%s%u", (i ? "." : ""), rd->a_record.addr[i]);
+				printf("%s", inet_ntoa(rd->a_record.addr));
+//				for(i = 0; i < 4; ++i)
+//					printf("%s%u", (i ? "." : ""), rd->a_record.addr[i]);
 			
 				printf(" }");
 				break;
@@ -316,8 +320,9 @@ void print_resource_record(struct ResourceRecord* rr)
 			case RR_AAAA:
 				printf("AAAA Resource Record { address ");
 			
-				for(i = 0; i < 16; ++i)
-					printf("%s%02x", (i ? ":" : ""), rd->aaaa_record.addr[i]);
+				
+				//for(i = 0; i < 16; ++i)
+				//	printf("%s%02x", (i ? ":" : ""), rd->aaaa_record.addr[i]);
 			
 				printf(" }");
 				break;
@@ -401,7 +406,6 @@ void put16bits( uint8_t** buffer, uint16_t value ) {
 }
 
 void put32bits( uint8_t** buffer, uint32_t value ) {
-	//value = htons( value );
 	value = htonl( value );
 	memcpy( *buffer, &value, 4 );
 	*buffer += 4;
@@ -436,8 +440,6 @@ void putcname(uint8_t** buffer, const uint8_t* domain)
 	i += 1;
 	*buffer += i;
 }
-
-
 
 /*
 * Deconding/Encoding functions.
@@ -644,23 +646,92 @@ struct ResourceRecord *RR_soa_create(const char *mname, const char *rname, uint3
 	return tmp;
 }
 
-int Resolve_Record(const char *zone, const char *name, uint32_t *type, char *rdata, uint32_t *ttl)
+int Resolve_A_Record(struct ResourceRecord* rr)
 {
-	
+	rr->rd_length = 4;
+	inet_pton(AF_INET, "192.168.10.123", (void *)&rr->rd_data.a_record.addr);
 	return 0;
 }
 
-int Resolve_SOA(const char *zone, const char *name, char *mname, char *rname, uint32_t *serial)
+int Resolve_AAAA_Record(struct ResourceRecord* rr)
 {
-	sprintf(mname, "ns1.%s", zone);
-	sprintf(rname, "root.%s", zone);
-	*serial = 2017083016;
+	rr->rd_length = 16;
+	inet_pton(AF_INET6, "0:0:0:0:0:FFFF:204.152.189.116", (void *)&rr->rd_data.aaaa_record.addr);
+	return 0;
+}
+
+//int Resolve_SOA_Record(const char *zone, const char *name, char *mname, char *rname, uint32_t *serial)
+int Resolve_SOA_Record(struct ResourceRecord* rr)
+{
+	rr->rd_data.soa_record.MName = strdup("ns1.b.com");
+	rr->rd_data.soa_record.RName = strdup("root.b.com");
+	rr->rd_data.soa_record.serial = 2017182013;
+	rr->rd_data.soa_record.refresh = DEFAULT_REFRESH;
+	rr->rd_data.soa_record.retry = DEFAULT_RETRY;
+	rr->rd_data.soa_record.expire = DEFAULT_EXPIRE;
+	rr->rd_data.soa_record.minimum = DEFAULT_MINIMUM;
+	rr->rd_length = strlen(rr->rd_data.soa_record.MName) + strlen(rr->rd_data.soa_record.RName) + 4 + 20;
+	return 0;
+}
+
+int Resolve_ResourceRecord(struct ResourceRecord* rr)
+{
+	int	rc = 0;
+
+	rr->ttl = (long)60 * 60; //in seconds; 0 means no caching
+	
+	// We only can only answer two question types so far
+	// and the answer (resource records) will be all put
+	// into the answers list.
+	// This behavior is probably non-standard!
+	switch (rr->type)
+	{
+		case RR_A:
+			rc = Resolve_A_Record(rr);
+//			rr->rd_length = 4;
+//			rc = get_A_Record(rr->rd_data.a_record.addr, rr->name);
+			if(rc < 0)
+				return -1;
+			break;
+		case RR_AAAA:
+			rc = Resolve_AAAA_Record(rr);
+			//rr->rd_length = 16;
+			//rc = get_AAAA_Record(rr->rd_data.aaaa_record.addr, rr->name);
+			if(rc < 0)
+				return -1;
+			break;
+		case RR_CNAME:
+			rr->rd_length = strlen("aa.b.com") + 2;
+			rr->rd_data.cname_record.name = strdup("aa.b.com");
+			break;
+		case RR_SOA:
+			rr->rd_length = strlen(" ns1.b.com  root.b.com ") + 20;
+			rr->rd_data.soa_record.MName = strdup("ns1.b.com");
+			rr->rd_data.soa_record.RName = strdup("root.b.com");
+			rr->rd_data.soa_record.serial = 2017182013;
+			rr->rd_data.soa_record.refresh = DEFAULT_REFRESH;
+			rr->rd_data.soa_record.retry = DEFAULT_RETRY;
+			rr->rd_data.soa_record.expire = DEFAULT_EXPIRE;
+			rr->rd_data.soa_record.minimum = DEFAULT_MINIMUM;
+			break;
+		/*
+		case NS_RR:
+		case CNAME_RR:
+		case SOA_RR:
+		case PTR_RR:
+		case MX_RR:
+		case TXT_RR:
+		*/
+		default:
+			printf("Cannot answer question of type %d.\n", rr->type);
+			return -1;
+	}
+
 	return 0;
 }
 
 // For every question in the message add a appropiate resource record
 // in either section 'answers', 'authorities' or 'additionals'.
-
 int Message_resolve(struct Message *msg)
 {
 	struct ResourceRecord* beg;
@@ -684,60 +755,15 @@ int Message_resolve(struct Message *msg)
 	while (q)
 	{
 		rr = malloc(sizeof(struct ResourceRecord));
-
+		memset(rr, 0, sizeof(struct ResourceRecord));
 		rr->name = strdup(q->qName);
 		rr->type = q->qType;
 		rr->class = q->qClass;
-		rr->ttl = (long)60 * 60; //in seconds; 0 means no caching
-		
-		printf("Query for '%s' type '%d'\n", q->qName,  q->qType);
-		
-		// We only can only answer two question types so far
-		// and the answer (resource records) will be all put
-		// into the answers list.
-		// This behavior is probably non-standard!
-		switch(q->qType)
+		if (Resolve_ResourceRecord(rr) < 0)
 		{
-			case RR_A:
-				rr->rd_length = 4;
-				rc = get_A_Record(rr->rd_data.a_record.addr, q->qName);
-				if(rc < 0)
-					goto next;
-				break;
-			case RR_AAAA:
-				rr->rd_length = 16;
-				rc = get_AAAA_Record(rr->rd_data.aaaa_record.addr, q->qName);
-				if(rc < 0)
-					goto next;
-				break;
-			case RR_CNAME:
-				rr->rd_length = strlen("aa.b.com") + 2;
-				rr->rd_data.cname_record.name = strdup("aa.b.com");
-				break;
-			case RR_SOA:
-				rr->rd_length = strlen(" ns1.b.com  root.b.com ") + 20;
-				rr->rd_data.soa_record.MName = strdup("ns1.b.com");
-				rr->rd_data.soa_record.RName = strdup("root.b.com");
-				rr->rd_data.soa_record.serial = 2017182013;
-				rr->rd_data.soa_record.refresh = DEFAULT_REFRESH;
-				rr->rd_data.soa_record.retry = DEFAULT_RETRY;
-				rr->rd_data.soa_record.expire = DEFAULT_EXPIRE;
-				rr->rd_data.soa_record.minimum = DEFAULT_MINIMUM;
-				break;
-			/*
-			case NS_RR:
-			case CNAME_RR:
-			case SOA_RR:
-			case PTR_RR:
-			case MX_RR:
-			case TXT_RR:
-			*/
-			default:
-				msg->rcode = RT_NotImp;
-				printf("Cannot answer question of type %d.\n", q->qType);
-				goto next;
+			msg->rcode = RT_NotImp;
+			break;
 		}
-
 		msg->anCount++;
 		// prepend resource record to answers list
 		beg = msg->answers;
@@ -753,6 +779,8 @@ next:
 int encode_resource_records(struct ResourceRecord* rr, uint8_t** buffer)
 {
 	int i;
+	uint32_t A_addr;
+	uint64_t AAAA_addr;
 	while(rr)
 	{
 		/* Answer questions by attaching resource sections. */
@@ -765,12 +793,14 @@ int encode_resource_records(struct ResourceRecord* rr, uint8_t** buffer)
 		switch(rr->type)
 		{
 			case RR_A:
-				for(i = 0; i < 4; ++i)
-					put8bits(buffer, rr->rd_data.a_record.addr[i]);
+				A_addr = htonl(*(uint32_t *)&(rr->rd_data.a_record.addr));
+				put32bits(buffer, A_addr);
+	//			for(i = 0; i < 4; ++i)
+	//				put8bits(buffer, rr->rd_data.a_record.addr[i]);
 				break;
 			case RR_AAAA:
-				for(i = 0; i < 16; ++i)
-					put8bits(buffer, rr->rd_data.aaaa_record.addr[i]);
+	//			for(i = 0; i < 16; ++i)
+	//				put8bits(buffer, rr->rd_data.aaaa_record.addr[i]);
 				break;
 			case RR_CNAME:
 				putcname(buffer, rr->rd_data.cname_record.name);
@@ -849,6 +879,14 @@ void free_questions(struct Question* qq)
 void Message_init(struct Message *msg)
 {
 	memset(msg, 0, sizeof(struct Message));
+	// leave most values intact for response
+	msg->qr = 1; // this is a response
+	msg->aa = 1; // this server is authoritative
+	msg->ra = 0; // no recursion available
+	msg->rcode = RT_NoError;
+	msg->anCount = 0;
+	msg->nsCount = 0;
+	msg->arCount = 0;
 }
 
 void Message_free(struct Message *msg)
@@ -934,28 +972,7 @@ int main(int argc, char *argv[])
 		Message_resolve(&msg);
 		Message_package(&msg, buffer, (size_t *)&buflen);
 
-#if 0
-		buflen = Resolve_message(&msg, buffer, nbytes);
-		if (Message_decode(&msg, buffer, nbytes) != 0) 
-		{
-			continue;
-		}
-
-		/* Print query */
-		print_query(&msg);
-		resolver_process(&msg);
-		/* Print response */
-		print_query(&msg);
-
-		uint8_t *p = buffer;
-		if (Message_encode(&msg, &p) != 0) {
-			continue;
-		}
-
-		int buflen = p - buffer;
-#endif
 		sendto(sock, buffer, buflen, 0, (struct sockaddr*) &client_addr, addr_len);
-
 		Message_free(&msg);
 	}
 
