@@ -9,6 +9,11 @@
 #include <errno.h>
 #include <string.h>
 #include <stdint.h>
+#include <pthread.h>
+#include <sched.h>
+
+#include <event2/event.h>
+#include <event2/event_struct.h>
 
 #define BUF_SIZE 	1500
 #define DOMAINLEN	256
@@ -553,7 +558,6 @@ void Question_init(struct Question *que)
 }
 
 void Message_unpackage(struct Message *msg, const uint8_t *buffer, size_t *len)
-//int Message_decode(struct Message* msg, const uint8_t* buffer, int size)
 {
 	char name[DOMAINLEN];
 	int i;
@@ -561,12 +565,14 @@ void Message_unpackage(struct Message *msg, const uint8_t *buffer, size_t *len)
 
 	Message_decode_header(msg, &buffer);
 
+#if 0
 	if((msg->anCount + msg->nsCount) != 0)
 	{
 		printf("Only questions expected!\n");
 		*len = -1;
 		return;
 	}
+#endif
 
 	// parse questions
 	uint32_t qcount = msg->qdCount;
@@ -626,7 +632,6 @@ void Message_unpackage(struct Message *msg, const uint8_t *buffer, size_t *len)
 		return;
 	}
 
-	printf("opt_rdlen:%d opt_code %d  opt_len %d\n", opt_rdlen, opt_code, opt_len);
 	if (opt_len  >= 7 && opt_code == 8) /* Opt code edns subnet client */ 
 	{                                      
 		uint32_t addr = htonl(get32bits(&buffer));
@@ -638,17 +643,18 @@ void Message_unpackage(struct Message *msg, const uint8_t *buffer, size_t *len)
 	return;
 }
 
-struct ResourceRecord *RR_soa_create(const char *mname, const char *rname, uint32_t serial)
-{
-	struct ResourceRecord *tmp = NULL;
-	tmp = malloc(sizeof(struct ResourceRecord));
-
-	return tmp;
-}
-
 int Resolve_A_Record(struct ResourceRecord* rr)
 {
+	if (strcmp(rr->name, "www.a.com") == 0)
+	{
+		rr->type = RR_CNAME;
+		rr->rd_data.cname_record.name = strdup("abc.a.com");
+		rr->rd_length = strlen("abc.a.com") + 2;
+		rr->ttl = (long)60 * 60;
+		return 0;
+	}
 	rr->rd_length = 4;
+	rr->ttl = (long)60 * 60; //in seconds; 0 means no caching
 	inet_pton(AF_INET, "192.168.10.123", (void *)&rr->rd_data.a_record.addr);
 	return 0;
 }
@@ -656,6 +662,7 @@ int Resolve_A_Record(struct ResourceRecord* rr)
 int Resolve_AAAA_Record(struct ResourceRecord* rr)
 {
 	rr->rd_length = 16;
+	rr->ttl = (long)60 * 60; //in seconds; 0 means no caching
 	inet_pton(AF_INET6, "0:0:0:0:0:FFFF:204.152.189.116", (void *)&rr->rd_data.aaaa_record.addr);
 	return 0;
 }
@@ -677,9 +684,6 @@ int Resolve_SOA_Record(struct ResourceRecord* rr)
 int ResourceRecord_Resolve(struct ResourceRecord* rr)
 {
 	int	rc = 0;
-
-	rr->ttl = (long)60 * 60; //in seconds; 0 means no caching
-	
 	// We only can only answer two question types so far
 	// and the answer (resource records) will be all put
 	// into the answers list.
@@ -688,8 +692,6 @@ int ResourceRecord_Resolve(struct ResourceRecord* rr)
 	{
 		case RR_A:
 			rc = Resolve_A_Record(rr);
-//			rr->rd_length = 4;
-//			rc = get_A_Record(rr->rd_data.a_record.addr, rr->name);
 			if(rc < 0)
 				return -1;
 			break;
@@ -730,7 +732,7 @@ int ResourceRecord_Resolve(struct ResourceRecord* rr)
 	return 0;
 }
 
-struct ResourceRecord  *ResourceRecord_Create(const char *name, uint16_t type, uint16_t class)
+struct ResourceRecord  *ResourceRecord_Init(const char *name, uint32_t type)
 {
 	struct ResourceRecord *tmp = NULL;
 
@@ -738,18 +740,128 @@ struct ResourceRecord  *ResourceRecord_Create(const char *name, uint16_t type, u
 	memset(tmp, 0, sizeof(struct ResourceRecord));
 	tmp->name = strdup(name);
 	tmp->type = type;
-	tmp->class = class;
+	tmp->class = 0x0001;
 	tmp->next = NULL;
 	return tmp;
 }
 
-void ResourceRecord_add(struct Message *msg, struct ResourceRecord* rr)
+struct ResourceRecord  *ResourceRecord_Soa_init(const char *name, const char *mname, const char *rname, uint32_t serial)
+{
+	struct ResourceRecord *rr = malloc(sizeof(struct ResourceRecord));
+	if (!rr)
+		return NULL;
+
+	memset(rr, 0, sizeof(struct ResourceRecord));
+	rr->name = strdup(name);
+	rr->type = RR_SOA;
+	rr->ttl = 86400;
+	rr->class = 0x0001;
+	rr->next = NULL;
+	return rr;
+}
+
+void ResourceRecord_Add_Answer(struct Message *msg, struct ResourceRecord* rr)
 {
 	struct ResourceRecord *tmp = NULL;
 	tmp = msg->answers;
-	msg->answers = rr;
-	rr->next = tmp;
+
+	if (!tmp)
+	{
+		msg->answers = rr;
+	}
+	else
+	{
+		while (tmp->next)
+		{
+			tmp = tmp->next;
+		}
+		tmp->next = rr;
+	}
 	msg->anCount ++;
+}
+
+
+void ResourceRecord_add_Author(struct Message *msg, struct ResourceRecord* rr)
+{
+	struct ResourceRecord *tmp = NULL;
+	tmp = msg->authorities;
+
+	if (!tmp)
+	{
+		msg->authorities = rr;
+	}
+	else
+	{
+		while (tmp->next)
+		{
+			tmp = tmp->next;
+		}
+		tmp->next = rr;
+	}
+	msg->nsCount ++;
+}
+
+
+int ResourceRecord_Add(struct Message *msg, struct ResourceRecord *rr)
+{
+	if (rr->type == RR_SOA)
+	{
+		ResourceRecord_add_Author(msg, rr);
+	}
+	else if (rr->type == RR_A || rr->type == RR_AAAA|| rr->type == RR_NS || rr->type == RR_CNAME)
+	{
+		ResourceRecord_Add_Answer(msg, rr);
+	}
+	return 0;
+}
+
+int  Message_Putrr(struct Message *msg, const char *name, uint32_t type, const char *rdata, uint32_t ttl)
+{
+	int	rc = 0;
+	struct ResourceRecord *rr = ResourceRecord_Init(name, type);
+	if (!rr)
+		return -1;
+
+	switch (rr->type)
+	{
+		case RR_A:
+			rr->rd_length = 4;
+			rr->ttl = ttl;
+			inet_pton(AF_INET, rdata, (void *)&rr->rd_data.a_record.addr);
+			break;
+		case RR_AAAA:
+			rr->rd_length = 16;
+			rr->ttl = ttl;
+			inet_pton(AF_INET6, rdata, (void *)&rr->rd_data.aaaa_record.addr);
+			break;
+		case RR_CNAME:
+			rr->rd_length = strlen(rdata) + 2;
+			rr->rd_data.cname_record.name = strdup(rdata);
+			break;
+		default:
+			printf("Cannot answer question of type %d.\n", rr->type);
+			return -1;
+	}
+	ResourceRecord_Add(msg, rr);
+
+	return 0;
+}
+
+int Message_Putsoa(struct Message *msg, const char *name, const char *mname, const char *rname, uint32_t serial)
+{
+	int	rc = 0;
+	struct ResourceRecord *rr = ResourceRecord_Init(name, RR_SOA);
+	if (!rr)
+		return -1;
+	rr->rd_data.soa_record.MName = strdup(mname);
+	rr->rd_data.soa_record.RName = strdup(rname);
+	rr->rd_data.soa_record.serial = serial;
+	rr->rd_data.soa_record.refresh = DEFAULT_REFRESH;
+	rr->rd_data.soa_record.retry = DEFAULT_RETRY;
+	rr->rd_data.soa_record.expire = DEFAULT_EXPIRE;
+	rr->rd_data.soa_record.minimum = DEFAULT_MINIMUM;
+	rr->rd_length = strlen(rr->rd_data.soa_record.MName) + strlen(rr->rd_data.soa_record.RName) + 24;
+	return 0;
 }
 
 // For every question in the message add a appropiate resource record
@@ -778,21 +890,22 @@ int Message_resolve(struct Message *msg)
 
 	//for every question append resource records
 	q = msg->questions;
-	strcpy(qname, q->qName);
-	type = q->qType;
-	class = q->qClass;
-
 	while (q)
 	{
+		strcpy(qname, q->qName);
+		type = q->qType;
+		class = q->qClass;
 find_cname:
-		rr = ResourceRecord_Create(qname, type, class);
+		rr = ResourceRecord_Init(qname, type);
+		if (!rr)
+			return -1;
 
 		if (ResourceRecord_Resolve(rr) < 0)
 		{
 			msg->rcode = RT_NotImp;
 			break;
 		}
-		ResourceRecord_add(msg, rr);
+		ResourceRecord_Add(msg, rr);
 		if (rr->type != type && rr->type == RR_CNAME)
 		{
 			strcpy(qname, rr->rd_data.cname_record.name);
@@ -809,7 +922,7 @@ int encode_resource_records(struct ResourceRecord* rr, uint8_t** buffer)
 	int i;
 	uint32_t A_addr;
 	uint64_t AAAA_addr;
-	while(rr)
+	while (rr)
 	{
 		/* Answer questions by attaching resource sections. */
 		putcname(buffer, rr->name);
@@ -818,7 +931,7 @@ int encode_resource_records(struct ResourceRecord* rr, uint8_t** buffer)
 		put32bits(buffer, rr->ttl);
 		put16bits(buffer, rr->rd_length);
 		
-		switch(rr->type)
+		switch (rr->type)
 		{
 			case RR_A:
 				A_addr = htonl(*(uint32_t *)&(rr->rd_data.a_record.addr));
@@ -925,31 +1038,6 @@ void Message_free(struct Message *msg)
 	free_resource_records(msg->additionals);
 }
 
-#if 0
-size_t Resolve_message(struct Message *msg, char *buffer, size_t len)
-{
-	size_t	size = 0;
-	if (Message_decode(msg, buffer, len) != 0) 
-	{
-		return -1;
-	}
-
-	/* Print query */
-	print_query(msg);
-	resolver_process(msg);
-	/* Print response */
-	print_query(msg);
-
-	uint8_t *p = buffer;
-	if (Message_encode(msg, &p) != 0) {
-		return -1;
-	}
-
-	size = ((char *)p - buffer);
-	return size;
-}
-#endif
-
 void Message_package(struct Message *msg, const uint8_t *data, size_t *len)
 {
 	uint8_t *p = (char *)data;
@@ -961,49 +1049,123 @@ void Message_package(struct Message *msg, const uint8_t *data, size_t *len)
 	*len = ((char *)p - (char *)data);
 }
 
-int main(int argc, char *argv[])
+void do_accept(evutil_socket_t sockfd, short event_type, void *arg)
 {
-	// buffer for input/output binary packet
+	struct Message msg;
+	int	sock = sockfd;
+	int nbytes, rc, buflen;
 	uint8_t buffer[BUF_SIZE];
+	struct event_base *base = (struct event_base *)arg;
 	struct sockaddr_in client_addr;
 	socklen_t addr_len = sizeof(struct sockaddr_in);
-	struct sockaddr_in addr;
-	int nbytes, rc, buflen;
-	int sock;
-	int port = 53;
+	Message_init(&msg);
+	nbytes = recvfrom(sock, buffer, sizeof(buffer), 0, (struct sockaddr *) &client_addr, &addr_len);
+	msg.cliaddr = client_addr.sin_addr;
 
-	struct Message msg;
+	Message_unpackage(&msg, buffer, (size_t *)&nbytes);
+	Message_resolve(&msg);
+	Message_package(&msg, buffer, (size_t *)&buflen);
+
+	sendto(sock, buffer, buflen, 0, (struct sockaddr*) &client_addr, addr_len);
+	Message_free(&msg);
+}
+
+int main(int argc, char *argv[])
+{
+	socklen_t addr_len = sizeof(struct sockaddr_in);
+	struct sockaddr_in addr;
+	int sock = 0, rc = 0;
+	int port = 53;
 
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = INADDR_ANY;
 	addr.sin_port = htons(port);
 
 	sock = socket(AF_INET, SOCK_DGRAM, 0);
+	if (sock < 0)
+	{
+		printf("Could not create socket: %s\n", strerror(errno));
+		return 1;
+	}
 
+	evutil_make_socket_nonblocking(sock);
 	rc = bind(sock, (struct sockaddr*) &addr, addr_len);
-
 	if(rc != 0)
 	{
 		printf("Could not bind: %s\n", strerror(errno));
 		return 1;
 	}
 
-	printf("Listening on port %u.\n", port);
+	struct event_base *base = event_base_new();
+	if (base == NULL) 
+		return -1;
 
-	while(1)
+	//struct event *event = event_new(base, sock, EV_READ | EV_PERSIST, do_accept, (void*)base);  
+	struct event *event = event_new(base, sock, EV_READ | EV_PERSIST, do_accept, (void*)base);  
+	if (event == NULL) 
+		return -1;
+
+	event_add(event, NULL);
+	event_base_dispatch(base);
+#if 0
+	int threads = atoi(argv[1]);
+	int i = 0, ret = 0;
+	pthread_t ths[threads];
+	for (i = 0; i < threads; i++) 
 	{
-		Message_init(&msg);
-		nbytes = recvfrom(sock, buffer, sizeof(buffer), 0, (struct sockaddr *) &client_addr, &addr_len);
-		msg.cliaddr = client_addr.sin_addr;
+		struct event_base *base = event_base_new();
+		if (base == NULL) 
+			return -1;
 
-		Message_unpackage(&msg, buffer, (size_t *)&nbytes);
-		Message_resolve(&msg);
-		Message_package(&msg, buffer, (size_t *)&buflen);
+		struct event *event = event_new(base, sock, EV_READ | EV_PERSIST, do_accept, (void*)base);  
+		if (event == NULL) 
+			return -1;
 
-		sendto(sock, buffer, buflen, 0, (struct sockaddr*) &client_addr, addr_len);
-		Message_free(&msg);
+		event_add(event, NULL);
+		event_base_dispatch(base);
+
+
+		/* Optimize thread work on one cpu */
+		pthread_attr_t attr;
+		pthread_attr_init(&attr);
+#if 0
+		cpu_set_t cpu_info;
+		CPU_ZERO(&cpu_info);
+		CPU_SET(i, &cpu_info);
+
+		if (pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t), &cpu_info) != 0) 
+		{
+			ret = pthread_create(&ths[i], NULL, (void *)event_base_dispatch, base);
+		} 
+		else 
+		{
+			ret = pthread_create(&ths[i], &attr, (void *)event_base_dispatch, base);
+		}
+		if (ret != 0) 
+
+			return -1;
+#endif
+#if 0
+		cpu_set_t cpu_info;
+		CPU_ZERO(&cpu_info);
+		CPU_SET(i, &cpu_info);
+		pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t), &cpu_info);
+#endif
+		struct sched_param param;
+		param.sched_priority = 99;
+		pthread_attr_setschedparam (&attr, &param);
+		pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
+		pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
+//		pthread_attr_setschedpolicy(&attr, SCHED_RR);
+		ret = pthread_create(&ths[i], &attr, (void *)event_base_dispatch, base);
 	}
 
+	/* Wait for exit */
+	for (i = 0; i < threads; i++) 
+	{
+		pthread_join(ths[i], NULL);
+	}
+#endif
 	close(sock);
 
 	return 0;
