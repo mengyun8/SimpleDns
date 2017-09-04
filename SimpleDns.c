@@ -103,10 +103,6 @@ enum {
 	STAR_QueryType = 255
 };
 
-/*
-* Types.
-*/
-
 /* Question Section */
 struct Question {
 	char *qName;
@@ -147,8 +143,8 @@ union ResourceData {
 		char *exchange;
 	} mx_record;
 	struct {
-		//uint8_t addr[16];
-		struct in6_addr addr;
+		uint8_t addr[16];
+		//struct in6_addr addr;
 	} aaaa_record;
 	struct {
 		uint16_t priority;
@@ -970,12 +966,10 @@ int encode_resource_records(struct ResourceRecord* rr, uint8_t** buffer)
 			case RR_A:
 				A_addr = htonl(*(uint32_t *)&(rr->rd_data.a_record.addr));
 				put32bits(buffer, A_addr);
-	//			for(i = 0; i < 4; ++i)
-	//				put8bits(buffer, rr->rd_data.a_record.addr[i]);
 				break;
 			case RR_AAAA:
-	//			for(i = 0; i < 16; ++i)
-	//				put8bits(buffer, rr->rd_data.aaaa_record.addr[i]);
+				for(i = 0; i < 16; ++i)
+					put8bits(buffer, rr->rd_data.aaaa_record.addr[i]);
 				break;
 			case RR_CNAME:
 				putcname(buffer, rr->rd_data.cname_record.name);
