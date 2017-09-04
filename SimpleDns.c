@@ -739,10 +739,44 @@ struct ResourceRecord  *ResourceRecord_Init(const char *name, uint32_t type)
 	tmp = malloc(sizeof(struct ResourceRecord));
 	memset(tmp, 0, sizeof(struct ResourceRecord));
 	tmp->name = strdup(name);
+	tmp->origin = NULL;
 	tmp->type = type;
 	tmp->class = 0x0001;
 	tmp->next = NULL;
 	return tmp;
+}
+
+void ResourceRecord_Free(struct ResourceRecord  *rr)
+{
+	if (!rr)
+		return;
+
+	if (rr->name)
+		free(rr->name);
+
+	if (rr->origin)
+		free(rr->origin);
+
+	switch (rr->type)
+	{
+		case RR_A:
+			break;
+		case RR_AAAA:
+			break;
+		case RR_CNAME:
+			free(rr->rd_data.cname_record.name);
+			break;
+		case RR_NS:
+			free(rr->rd_data.ns_record.name);
+			break;
+		case RR_SOA:
+			free(rr->rd_data.soa_record.MName);
+			free(rr->rd_data.soa_record.RName);
+			break;
+		default:
+			break;
+	}
+	free(rr);
 }
 
 struct ResourceRecord  *ResourceRecord_Soa_init(const char *name, const char *mname, const char *rname, uint32_t serial)
@@ -998,9 +1032,8 @@ void free_resource_records(struct ResourceRecord* rr)
 	struct ResourceRecord* next;
 
 	while(rr) {
-		free(rr->name);
 		next = rr->next;
-		free(rr);
+		ResourceRecord_Free(rr);
 		rr = next;
 	}
 }
