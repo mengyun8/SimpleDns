@@ -1068,6 +1068,7 @@ void do_accept(evutil_socket_t sockfd, short event_type, void *arg)
 
 	sendto(sock, buffer, buflen, 0, (struct sockaddr*) &client_addr, addr_len);
 	Message_free(&msg);
+
 }
 
 int main(int argc, char *argv[])
