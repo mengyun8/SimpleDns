@@ -1,8 +1,10 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 
 #include "Dns.h"
+#include "log.h"
 
 void print_hex(uint8_t* buf, size_t len)
 {
@@ -496,9 +498,8 @@ struct ResourceRecord  *ResourceRecord_Create(const char *name, uint32_t type, u
 			tmp->rd_length = 4;
 			if (inet_pton(AF_INET, rdata, (void *)&(tmp->rd_data.a_record.addr)) == 0)
 			{
-				perror("inet_pton:");
+				log(LOG_INFO, "inet_pton: %s", strerror(errno));
 			}
-			printf("Insert %s  to  %s \n", rdata, inet_ntoa(tmp->rd_data.a_record.addr));
 			break;
 		case RR_AAAA:
 			tmp->rd_length = 16;
@@ -549,8 +550,7 @@ struct ResourceRecord  *ResourceRecord_Dump(struct ResourceRecord  *rr)
 	tmp->ttl = rr->ttl;
 	tmp->next = NULL;
 
-	ResourceRecord_Debug(rr);
-
+//	ResourceRecord_Debug(rr);
 	switch (rr->type)
 	{
 		case RR_A:
@@ -707,13 +707,11 @@ int  Message_Putrr(struct Message *msg, const char *name, uint32_t type, const c
 			return -1;
 	}
 	ResourceRecord_Add(msg, rr);
-
 	return 0;
 }
 
 int Message_Putsoa(struct Message *msg, const char *name, const char *mname, const char *rname, uint32_t serial)
 {
-	//int	rc = 0;
 	struct ResourceRecord *rr = ResourceRecord_Init(name, RR_SOA);
 	if (!rr)
 		return -1;
@@ -728,39 +726,35 @@ int Message_Putsoa(struct Message *msg, const char *name, const char *mname, con
 	return 0;
 }
 
-// For every question in the message add a appropiate resource record
-// in either section 'answers', 'authorities' or 'additionals'.
+/* For every question in the message add a appropiate resource record
+   in either section 'answers', 'authorities' or 'additionals'. */
 int Message_resolve(struct Message *msg, env_t *env)
 {
-	//struct ResourceRecord* beg;
-	struct ResourceRecord* rr = NULL;
-	struct Question* q;
-	//int rc;
-
-	char		qname[256] = {0};
-	uint16_t	type = 0;
-	uint16_t	class = 0;
+	struct ResourceRecord	*rr = NULL;
+	struct Question		*q;
+	char			qname[256] = {0};
+	uint16_t		type = 0;
+	uint16_t		class = 0;
 
 	// leave most values intact for response
 	msg->qr = 1; // this is a response
 	msg->aa = 1; // this server is authoritative
 	msg->ra = 0; // no recursion available
 	msg->rcode = RT_NoError;
-
 	//should already be 0
 	msg->anCount = 0;
 	msg->nsCount = 0;
 	msg->arCount = 0;
 
-	//for every question append resource records
 	q = msg->questions;
 	while (q)
 	{
+		log(LOG_INFO, "Got Request from %s %s", q->qName, inet_ntoa(msg->cliaddr));
 		strcpy(qname, q->qName);
 		type = q->qType;
 		class = q->qClass;
 find_cname:
-		printf(" ---  Dnsdb lookup %s\n", qname);
+//		printf(" ---  Dnsdb lookup %s\n", qname);
 #if 1
 		rr = Dnsdb_lookup(&env->db, qname);
 #else
@@ -773,7 +767,6 @@ find_cname:
 			msg->rcode = RT_NotImp;
 			break;
 		}
-
 #endif
 		if (rr != NULL)
 		{
@@ -789,7 +782,6 @@ find_cname:
 			strcpy(qname, rr->rd_data.cname_record.name);
 			goto find_cname;
 		}
-		// process next question
 		q = q->next;
 	}
 	return 0;
@@ -838,7 +830,6 @@ int encode_resource_records(struct ResourceRecord* rr, uint8_t** buffer)
 				fprintf(stderr, "Unknown type %u. => Ignore resource record.\n", rr->type);
 			return 1;
 		}
-		
 		rr = rr->next;
 	}
 	return 0;

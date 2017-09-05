@@ -64,7 +64,7 @@ int main(int argc, char *argv[])
 	sock = socket(AF_INET, SOCK_DGRAM, 0);
 	if (sock < 0)
 	{
-		printf("Could not create socket: %s\n", strerror(errno));
+		log(LOG_ERR, "Could not create socket: %s\n", strerror(errno));
 		return 1;
 	}
 
@@ -72,7 +72,7 @@ int main(int argc, char *argv[])
 	rc = bind(sock, (struct sockaddr*) &addr, addr_len);
 	if(rc != 0)
 	{
-		printf("Could not bind: %s\n", strerror(errno));
+		log(LOG_ERR, "Could not bind: %s\n", strerror(errno));
 		return 1;
 	}
 
@@ -86,6 +86,7 @@ int main(int argc, char *argv[])
 		return -1;
 
 	event_add(event, NULL);
+	log(LOG_INFO, "Server start .......");
 	event_base_dispatch(base);
 #if 0
 	int threads = atoi(argv[1]);

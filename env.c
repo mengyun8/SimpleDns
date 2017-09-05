@@ -91,9 +91,7 @@ int env_init(env_t *env)
 	{
 		strcpy(env->logfile, LOGFILE);
 	}
-
 	log_init(env->logfile);
-
 	return 0;
 }
 
