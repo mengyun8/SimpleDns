@@ -4,6 +4,7 @@
 Use Command test:
 
 #dig @127.0.0.1 www.test.com 
+```
 ; <<>> DiG 9.11.0-P3 <<>> @127.0.0.1 xxx.test.com
 ; (1 server found)
 ;; global options: +cmd
@@ -22,4 +23,4 @@ aaa.test.com.		200	IN	A	1.2.3.4
 ;; SERVER: 127.0.0.1#53(127.0.0.1)
 ;; WHEN: Tue Sep 05 01:09:45 PDT 2017
 ;; MSG SIZE  rcvd: 96
-
+```
