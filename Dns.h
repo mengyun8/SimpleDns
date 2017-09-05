@@ -180,7 +180,7 @@ void Message_free(struct Message *msg);
 int  Message_resolve(struct Message *msg);
 void Message_package(struct Message *msg, const uint8_t *data, uint32_t *len);
 
-struct ResourceRecord  *ResourceRecord_Create(void);
+struct ResourceRecord  *ResourceRecord_Create(const char *name, uint32_t type, uint32_t ttl, const char *rdata);
 struct ResourceRecord  *ResourceRecord_Init(const char *name, uint32_t type);
 struct ResourceRecord  *ResourceRecord_Soa_init(const char *name, const char *mname, const char *rname, uint32_t serial);
 

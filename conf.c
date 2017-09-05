@@ -5,6 +5,7 @@
 
 #include "conf.h"
 #include "log.h"
+#include "Dnsdb.h"
 
 #define CONF_LOGFILE 	"logfile:"
 #define CONF_ZONE	"zone:"
@@ -60,7 +61,7 @@ int env_parse_line(env_t *env, const char *line)
 				strcpy(file, str);
 			}
 		}
-		
+		Dnsdb_load(&env->db, zone, file);
 	}
 	return 0;
 }

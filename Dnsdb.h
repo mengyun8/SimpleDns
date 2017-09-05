@@ -31,6 +31,7 @@ void Domain_free(Domain_t *domain);
 
 void Dnsdb_init(Dnsdb_t *db);
 void Dnsdb_free(Dnsdb_t *db);
+int  Dnsdb_load(Dnsdb_t *db, const char *zone, const char *file);
 int  Dnsdb_lookup(Dnsdb_t *db, const char *name, struct ResourceRecord  *rr);
 int  Dnsdb_authority(Dnsdb_t *db, const char *name, struct ResourceRecord  *rr);
 

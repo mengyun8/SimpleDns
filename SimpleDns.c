@@ -23,6 +23,9 @@
 #define BUF_SIZE 	1500
 #define DOMAINLEN	256
 
+
+env_t		env;
+
 void do_accept(evutil_socket_t sockfd, short event_type, void *arg)
 {
 	struct Message msg;
@@ -55,6 +58,8 @@ int main(int argc, char *argv[])
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = INADDR_ANY;
 	addr.sin_port = htons(port);
+
+	env_init(&env);
 
 	sock = socket(AF_INET, SOCK_DGRAM, 0);
 	if (sock < 0)

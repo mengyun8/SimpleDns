@@ -16,6 +16,7 @@ char level[4][2] = {"I","D","W","E"};
 
 FILE	*log_fp = NULL;
 
+/* Init Log */
 int log_init(const char *file)
 {
 	log_fp = fopen(file, "a+");
@@ -23,6 +24,7 @@ int log_init(const char *file)
 		return -1;
 	return 0;
 }
+
 /* Log info of dns manage */
 int log_info(const char *fmt, ...)
 {

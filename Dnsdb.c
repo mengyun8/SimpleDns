@@ -57,7 +57,7 @@ void Dnsdb_free(Dnsdb_t *db)
 	Domain_free(&db->domain);
 }
 
-int Record_check(const char *type)
+unsigned int Record_check(const char *type)
 {
 	if (strcmp(type, "A") == 0)
 	{
@@ -179,15 +179,96 @@ int Parse_zone_line(const char *confbuf, char *zone, char *file)
 	return 0;
 }
 
-int Zone_load(Zone_t *head, const char *zone, const char *file)
+void Zone_Add_ResourceRecord(Zone_t *head, struct ResourceRecord *rr)
 {
-	FILE	*fp = NULL;
-	char	buf[MAXLINE] = {0};
+	if (!head->rr)
+		head->rr = rr;
+	else
+	{
+		rr->next = head->rr;
+		head->rr = rr;
+	}
+}
 
-	strcpy(head->name, zone);
+int Zone_load(Zone_t *head, const char *zone, const char *zonebuf)
+{
+	int		i = 0;
+	char		buf[MAXLINE] = {0};
+	char		name[RRLEN] = {0};
+	char		rdata[RRLEN] = {0};
+	long		ttl = 600;
+	unsigned int	type = 0;
+	char		*p = NULL, *str = NULL, *pstr;
+	strncpy(buf, zonebuf, strlen(zonebuf) -1);
+
+	for (p = buf; (str = strtok_r(p, " ", &pstr)) != NULL; p = NULL)
+	{
+		if (i == 0)
+		{
+			if (str[strlen(str) - 1] == '.' || strcmp(str, "@") == 0)
+			{
+				strcpy(name, str);
+			}
+			else
+			{
+				sprintf(name, "%s.%s", str, zone);
+			}
+		}
+		else if (i == 1)
+		{
+			if (strcmp(str, "IN") != 0)
+			{
+				ttl = atoi(str);
+				continue;
+			}
+		}
+		else if (i == 2)
+		{
+			type = Record_check(str);	
+		}
+		else if (i == 3)
+		{
+			if ((type == RR_CNAME || type == RR_NS || type == RR_MX) && str[strlen(str) - 1] != '.')
+			{
+				sprintf(rdata, "%s.%s", str, zone);
+			}
+			else
+			{
+				strcpy(rdata, str);
+			}
+		}
+		i++;
+	}
+	if (i < 4 || type == RR_SOA)
+	{
+		return -1;
+	}
+	strcpy(head->name, name);
+	struct ResourceRecord *rr = ResourceRecord_Create(name, type, ttl, rdata); 
+	if (!rr)
+		return -1;
+	Zone_Add_ResourceRecord(head, rr);
+	return 0;
+}
+
+int Domain_load(Domain_t *head, const char *confbuf)
+{
+	char		zone[MAXLINE] = {0};
+	char		file[MAXLINE] = {0};
+	char		buf[MAXLINE] = {0};
+	FILE		*fp = NULL;
+	Domain_t	*domain = NULL;
+
+	if (Parse_zone_line(confbuf, zone, file) < 0)
+		return -1;
+
+	domain = malloc(sizeof(Domain_t));
+	Domain_init(domain);
+	strcpy(domain->name, zone);
 
 	if ((fp = fopen(file, "r")) == NULL)
 	{
+		Domain_free(domain);
 		return -1;
 	}
 
@@ -198,32 +279,28 @@ int Zone_load(Zone_t *head, const char *zone, const char *file)
 			memset(buf, 0, sizeof(buf));
 			continue;
 		}
-		Zone_load_line(head, zone, buf);
+		Zone_load(&domain->zone, zone, buf);
 		memset(buf, 0, MAXLINE);
 	}
 
+	Domain_add(head, domain);
 	fclose(fp);
 	return 0;
 }
 
-int Domain_load_line(Domain_t *head, const char *confbuf)
+void Zone_Add(Zone_t *head, Zone_t *zone)
 {
-	char		zone[MAXLINE] = {0};
-	char		file[MAXLINE] = {0};
-	Domain_t	*domain = NULL;
-	domain = malloc(sizeof(Domain_t));
-	Domain_init(domain);
-	Parse_zone_line(confbuf, zone, file);
-	Zone_load(&domain->zone, zone, file);
-	Domain_add(head, domain);
-	return 0;
+	list_add(&head->list, &zone->list);	
 }
 
-int Domain_load(Domain_t *head, const char *name, const char *file)
+int Dnsdb_domain_load(Domain_t *head, const char *name, const char *file)
 {
 	FILE	*fp = NULL;
 	char	buf[MAXLINE] = {0};
+	Zone_t	*zone = NULL;
 
+	zone = malloc(sizeof(Zone_t));
+	Zone_init(zone);
 	strcpy(head->name, name);
 
 	if ((fp = fopen(file, "r")) == NULL)
@@ -233,13 +310,13 @@ int Domain_load(Domain_t *head, const char *name, const char *file)
 
 	while (fgets(buf, MAXLINE, fp))
 	{
-		if (strstr(buf, "zone:") != NULL)
+		if (Zone_load(zone, name, buf) < 0)
 		{
-			Domain_load_line(head, buf);
+			return -1;
 		}
 		memset(buf, 0, MAXLINE);
 	}
-
+	Zone_Add(&head->zone, zone);
 	fclose(fp);
 	return 0;
 }
@@ -252,7 +329,7 @@ int Dnsdb_load(Dnsdb_t *db, const char *zone, const char *file)
 		return -1;
 	Domain_init(domain);
 
-	return Domain_load(domain, zone, file);
+	return Dnsdb_domain_load(domain, zone, file);
 }
 
 int Dnsdb_lookup_origin(Dnsdb_t *db, const char *name, char *origin)

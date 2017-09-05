@@ -483,13 +483,34 @@ int ResourceRecord_Resolve(struct ResourceRecord* rr)
 	return 0;
 }
 
-struct ResourceRecord  *ResourceRecord_Create(void)
+struct ResourceRecord  *ResourceRecord_Create(const char *name, uint32_t type, uint32_t ttl, const char *rdata)
 {
 	struct ResourceRecord *tmp = NULL;
 	tmp = malloc(sizeof(struct ResourceRecord));
 	memset(tmp, 0, sizeof(struct ResourceRecord));
 	tmp->class = 0x0001;
+	tmp->type = type;
+	tmp->ttl = ttl;
 	tmp->next = NULL;
+
+	switch (type)
+	{
+		case RR_A:
+			tmp->rd_length = 4;
+			inet_pton(AF_INET, rdata, (void *)&tmp->rd_data.a_record.addr);
+			break;
+		case RR_AAAA:
+			tmp->rd_length = 16;
+			inet_pton(AF_INET6, rdata, (void *)&tmp->rd_data.aaaa_record.addr);
+			break;
+		case RR_CNAME:
+			tmp->rd_length = strlen(rdata) + 2;
+			tmp->rd_data.cname_record.name = strdup(rdata);
+			break;
+		default:
+			free(tmp);
+			return NULL;
+	}
 	return tmp;
 }
 
