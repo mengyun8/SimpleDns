@@ -130,13 +130,10 @@ int Zone_load(Zone_t *zone, const char *name, const char *zonebuf)
 	char		rdata[RRLEN] = {0};
 	long		ttl = 600;
 	unsigned int	type = 0;
-	//char		*p = NULL, *str = NULL, *pstr;
-
 	val_t		val;
 	val_t		*tmp = NULL;
 
 	strncpy(buf, zonebuf, strlen(zonebuf) - 1);
-
 	val_init(&val);
 	if ((ret = buffer_get_key(buf, &val)) < 4)
 	{
@@ -148,7 +145,11 @@ int Zone_load(Zone_t *zone, const char *name, const char *zonebuf)
 		tmp = tmp->next; 
 		if (i == 0)
 		{
-			if (tmp->val[strlen(tmp->val) - 1] == '.' || strcmp(tmp->val, "@") == 0)
+			if (tmp->val[strlen(tmp->val) - 1] == '.')
+			{
+				strncpy(rname, tmp->val, strlen(tmp->val) - 1);
+			}
+			else if (strcmp(tmp->val, "@") == 0)
 			{
 				strcpy(rname, tmp->val);
 			}
@@ -175,9 +176,13 @@ int Zone_load(Zone_t *zone, const char *name, const char *zonebuf)
 			{
 				sprintf(rdata, "%s.%s", tmp->val, name);
 			}
-			else
+			else if (tmp->val[strlen(tmp->val) - 1] != '.')
 			{
 				strcpy(rdata, tmp->val);
+			}
+			else
+			{
+				strncpy(rdata, tmp->val, strlen(tmp->val) - 1);
 			}
 		}
 		i++;
@@ -315,7 +320,6 @@ int Dnsdb_lookup_origin(Dnsdb_t *db, const char *name, char *origin)
 	list_for_each(pos, &(db->domain.list))
 	{
 		tmp = list_entry(pos, Domain_t, list);
-		printf("Look origin cmp [%s == %s]\n", name, tmp->name);
 		if ((p = strstr(name, tmp->name)) != NULL)
 		{
 			if (labal == 0 || p - name < labal)
@@ -340,7 +344,6 @@ struct ResourceRecord  *Domain_findzone(Domain_t *domain, const char *name)
 		tmp = list_entry(pos, Zone_t, list);
 		if (strcmp(name, tmp->name) == 0 && tmp->rr)
 		{
-			printf("Check [%s] -- [%s] Hit !!!!!!!!!\n", name, tmp->name);
 			rr = ResourceRecord_Dump(tmp->rr);
 		}
 	}
@@ -382,7 +385,6 @@ struct ResourceRecord  *Dnsdb_lookup(Dnsdb_t *db, const char *name)
 	if (Dnsdb_lookup_origin(db, name, origin) < 0)
 		return NULL;
 	
-	printf("Lookup root:%s name:%s\n", origin, name);
 	return Dnsdb_lookup_record(db, origin, name);
 }
 

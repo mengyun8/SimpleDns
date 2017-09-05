@@ -760,7 +760,7 @@ int Message_resolve(struct Message *msg, env_t *env)
 		type = q->qType;
 		class = q->qClass;
 find_cname:
-		printf("Dnsdb lookup %s\n", qname);
+		printf(" ---  Dnsdb lookup %s\n", qname);
 #if 1
 		rr = Dnsdb_lookup(&env->db, qname);
 #else
