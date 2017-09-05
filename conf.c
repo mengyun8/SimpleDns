@@ -1,107 +1,85 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <errno.h>
 
 #include "conf.h"
-#include "log.h"
-#include "Dnsdb.h"
 
-#define CONF_LOGFILE 	"logfile:"
-#define CONF_ZONE	"zone:"
-#define LOGFILE		"/var/log/SimpleDns.log"
-#define CONFILE		"/etc/SimpleDns.conf"
-
-env_t	env;
-
-char *strget(char *string)
+void val_init(val_t *val)
 {
-	char	*p = string;
-	char	*q = NULL;
-	while (*p == ' ' || *p == '\t') p++;
-	q = p;
-	while (*q != '\n' && *q != ' ' && *q != '\t' && *q != '\0') q++;
-	*q = '\0';
-	return p;
+	memset(val, 0, sizeof(val_t));
+	val->next = NULL;
 }
 
-int env_parse_line(env_t *env, const char *line)
+int val_insert(val_t *head, const char *msg)
 {
-	int		i = 0;
-	char 		*p = (char *)line; 
-	char		*str = NULL, *pstr = NULL;
-	char		buf[MAXLINE] = {0};
-	char		zone[MAXLINE] = {0};
-	char		file[MAXLINE] = {0};
+	val_t 	*p = head;
 
-	while (*p == ' ' || *p == '\t' ) p++;
-	if (*p == '#' || *p == ';' || *p == '\n')
-		return 0;
-
-	p[strlen(p) - 1] = '\0';
-
-	if (strncasecmp(p, CONF_LOGFILE, strlen(CONF_LOGFILE)) == 0)
-	{
-		p += strlen(CONF_LOGFILE);
-		strcpy(env->logfile, strget(p));
-	}
-	else if (strncasecmp(p, CONF_ZONE, strlen(CONF_ZONE)) == 0)
-	{
-		p += strlen(CONF_ZONE);
-		memset(buf, 0, MAXLINE);
-		strcpy(buf, p);
-		for (p = buf; (str = strtok_r(p, " ", &pstr)) != NULL; p = NULL, i++)
-		{
-			if (i == 0)
-			{
-				strcpy(zone, str);
-			}
-			else if (i == 1)
-			{
-				strcpy(file, str);
-			}
-		}
-		Dnsdb_load(&env->db, zone, file);
-	}
-	return 0;
-}
-
-int env_init(env_t *env)
-{
-	FILE	*fp = NULL;
-	char	buf[MAXLINE] = {0};
-	memset(env, 0, sizeof(env_t));
-	Dnsdb_init(&env->db);
-
-	if ((fp = fopen(CONFILE, "r")) == NULL)
-	{
-		fprintf(stderr, "Load conf: %s %s", CONFILE, strerror(errno));
+	if (!msg || strcmp(msg, "\n") == 0 || *msg == '\0')
 		return -1;
-	}
-
-	while (fgets(buf, MAXLINE, fp))
+	
+	while (p->next) 
 	{
-		env_parse_line(env, buf);
-		memset(buf, 0, MAXLINE);
+		p = p->next;
 	}
-	fclose(fp);
+	p->next =  malloc(sizeof(val_t));
+	p = p->next;
 
-	if (*env->logfile == '\0')
-	{
-		strcpy(env->logfile, LOGFILE);
-	}
-
-	log_init(env->logfile);
-
+	memset(p, 0, sizeof(val_t));
+	strcpy(p->val, msg);
+	p->next = NULL;
 	return 0;
 }
 
-void env_clean(env_t *env)
+void val_print(val_t *head)
 {
-
+	int 	i = 0;
+	val_t 	*p = head->next;
+	while (p) {
+		printf("debug--%d--[%s]\n", i++, p->val);
+		p = p->next;
+	}
 }
 
-void env_show(env_t *env)
+int val_free(val_t *head) 
 {
-	printf("--> %s\n", env->logfile);
+	val_t 	*tmp = NULL;
+	val_t	*p = head;
+
+	if (!p)
+		return -1;
+
+	while (p->next) {
+		tmp = p->next;
+		p->next = p->next->next;
+		free(tmp);
+	}
+	head->next = NULL;
+	return 0;
 }
+
+/* Return parse line len */
+int buffer_get_key(const char *confbuf, val_t *val)
+{
+	int	len = 0;
+	char 	*start = NULL;
+	char 	*end = NULL;
+	char	*p = (char *)confbuf;
+	char	buffer[MAXLINE] = {0};
+
+	while (*p != '\n' && *p != '\0')
+	{
+		memset(buffer, 0, sizeof(buffer));
+		while (*p == ' ' || *p == '\t' || *p == '\r') p++;
+		if (*p == '\n' || *p == ';' || *p == '#' || *p == '\0')
+			return 0;
+		
+		start = p;
+		while (*p != ' ' && *p != '\t' && *p != '\r' && *p != '\n' && *p != '\0') p++;
+		end = p;
+		strncpy(buffer, start, end - start);
+		val_insert(val, buffer);
+		len ++;
+	}
+	return len;
+}
+

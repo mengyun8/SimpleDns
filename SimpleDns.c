@@ -16,7 +16,7 @@
 #include <event2/event.h>
 #include <event2/event_struct.h>
 
-#include "conf.h"
+#include "env.h"
 #include "log.h"
 #include "Dns.h"
 
@@ -40,7 +40,7 @@ void do_accept(evutil_socket_t sockfd, short event_type, void *arg)
 	msg.cliaddr = client_addr.sin_addr;
 
 	Message_unpackage(&msg, buffer, (size_t *)&nbytes);
-	Message_resolve(&msg);
+	Message_resolve(&msg, &env);
 	Message_package(&msg, buffer, (uint32_t *)&buflen);
 
 	sendto(sock, buffer, buflen, 0, (struct sockaddr*) &client_addr, addr_len);

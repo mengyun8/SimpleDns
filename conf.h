@@ -1,26 +1,18 @@
 #ifndef __CONF_H
 #define __CONF_H
 
-#include "list.h"
-#include "Dnsdb.h"
+#define MAXLINE		1024
 
-#define 	IPLEN	16
-#define		EXLINES	1024	
-#define		MAXLINE 1024
+typedef struct value_t val_t;
 
-typedef struct env_data_type {
-	char		logfile[MAXLINE];
-	FILE		*logfp;
-	char		workdir[MAXLINE];
-	unsigned int	daemon;
+struct value_t {
+	char 	val[MAXLINE];
+	struct value_t *next;
+};
 
-	Dnsdb_t		db;
-	/* distory */
-	unsigned int	shutdown;
-} env_t;
-
-int  env_init(env_t *env);
-void env_clean(env_t *env);
-void env_show(env_t *env);
-
+void val_init(val_t *val);
+int  val_insert(val_t *head, const char *msg);
+void val_print(val_t *head);
+int  val_free(val_t *head);
+int  buffer_get_key(const char *confbuf, val_t *val);
 #endif

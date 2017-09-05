@@ -3,8 +3,10 @@
 
 #include <arpa/inet.h>
 #include "list.h" 
+#include "Dnsdb.h"
 
 #define RRLEN		256
+#define MAXLINE		1024
 
 /* These values are taken from RFC1537 */
 #define DEFAULT_REFRESH     (60 * 60 * 8)
@@ -46,7 +48,8 @@ enum {
 	RR_MX = 15,
 	RR_TXT = 16,
 	RR_AAAA = 28,
-	RR_SRV = 33
+	RR_SRV = 33,
+	RR_UNKNOWN = 255
 };
 
 /* Operation Code */
@@ -129,7 +132,6 @@ union ResourceData {
 /* Resource Record Section */
 struct ResourceRecord {
 	char 	*name;
-	char	*origin;
 	uint16_t type;
 	uint16_t class;
 	uint32_t ttl;
@@ -171,19 +173,28 @@ struct Message {
 };
 
 
+typedef struct env_data_type {
+	char		logfile[MAXLINE];
+	FILE		*logfp;
+	char		workdir[MAXLINE];
+	unsigned int	daemon;
 
-void Message_unpackage(struct Message *msg, const uint8_t *buffer, size_t *len);
-void ResourceRecord_Add_Answer(struct Message *msg, struct ResourceRecord* rr);
-void ResourceRecord_add_Author(struct Message *msg, struct ResourceRecord* rr);
-void Message_init(struct Message *msg);
-void Message_free(struct Message *msg);
-int  Message_resolve(struct Message *msg);
-void Message_package(struct Message *msg, const uint8_t *data, uint32_t *len);
+	Dnsdb_t		db;
+	/* distory */
+	unsigned int	shutdown;
+} env_t;
 
 struct ResourceRecord  *ResourceRecord_Create(const char *name, uint32_t type, uint32_t ttl, const char *rdata);
 struct ResourceRecord  *ResourceRecord_Init(const char *name, uint32_t type);
+struct ResourceRecord  *ResourceRecord_Dump(struct ResourceRecord  *rr);
 struct ResourceRecord  *ResourceRecord_Soa_init(const char *name, const char *mname, const char *rname, uint32_t serial);
+void ResourceRecord_Add_Answer(struct Message *msg, struct ResourceRecord* rr);
+void ResourceRecord_add_Author(struct Message *msg, struct ResourceRecord* rr);
 
-
+void Message_init(struct Message *msg);
+void Message_free(struct Message *msg);
+int  Message_resolve(struct Message *msg, env_t *env);
+void Message_package(struct Message *msg, const uint8_t *data, uint32_t *len);
+void Message_unpackage(struct Message *msg, const uint8_t *buffer, size_t *len);
 
 #endif

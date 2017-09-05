@@ -218,32 +218,4 @@ static inline void list_splice_init(struct list_head *list,
 			n = list_entry(pos->member.prev, typeof(*pos), member); \
 			&pos->member != (head); \
 			pos = n, n = list_entry(n->member.prev, typeof(*n), member))
-
-/*
-	data_t	data;
-	struct list_head *pos, *p;
-
-	// INIT 
-	INIT_LIST_HEAD(&data.list);
-
-	tmp = data_create("hi");
-	if (!tmp)
-		return -1;
-
-	// ADD
-	list_add(&tmp->list, &data.list);
-
-	// LIST
-	list_for_each(pos, &data.list) {
-		tmp = list_entry(pos, data_t, list);
-		printf("%s\n", ((data_t *)tmp)->name);
-	}
-
-	// CLEAN
-	list_for_each_safe(pos,p,&data.list){
-        	tmp = list_entry(pos, data_t,list);
-	        list_del(pos);
-		free(tmp);
-	}
-*/
 #endif

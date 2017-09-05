@@ -1,10 +1,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+
 #include "Dns.h"
-/*
-* Debugging functions.
-*/
 
 void print_hex(uint8_t* buf, size_t len)
 {
@@ -78,8 +76,6 @@ void print_resource_record(struct ResourceRecord* rr)
 				break;
 			case RR_AAAA:
 				printf("AAAA Resource Record { address ");
-			
-				
 				//for(i = 0; i < 16; ++i)
 				//	printf("%s%02x", (i ? ":" : ""), rd->aaaa_record.addr[i]);
 			
@@ -488,6 +484,7 @@ struct ResourceRecord  *ResourceRecord_Create(const char *name, uint32_t type, u
 	struct ResourceRecord *tmp = NULL;
 	tmp = malloc(sizeof(struct ResourceRecord));
 	memset(tmp, 0, sizeof(struct ResourceRecord));
+	tmp->name = strdup(name);
 	tmp->class = 0x0001;
 	tmp->type = type;
 	tmp->ttl = ttl;
@@ -497,15 +494,23 @@ struct ResourceRecord  *ResourceRecord_Create(const char *name, uint32_t type, u
 	{
 		case RR_A:
 			tmp->rd_length = 4;
-			inet_pton(AF_INET, rdata, (void *)&tmp->rd_data.a_record.addr);
+			if (inet_pton(AF_INET, rdata, (void *)&(tmp->rd_data.a_record.addr)) == 0)
+			{
+				perror("inet_pton:");
+			}
+			printf("Insert %s  to  %s \n", rdata, inet_ntoa(tmp->rd_data.a_record.addr));
 			break;
 		case RR_AAAA:
 			tmp->rd_length = 16;
-			inet_pton(AF_INET6, rdata, (void *)&tmp->rd_data.aaaa_record.addr);
+			inet_pton(AF_INET6, rdata, (void *)&(tmp->rd_data.aaaa_record.addr));
 			break;
 		case RR_CNAME:
 			tmp->rd_length = strlen(rdata) + 2;
 			tmp->rd_data.cname_record.name = strdup(rdata);
+			break;
+		case RR_NS:
+			tmp->rd_length = strlen(rdata) + 2;
+			tmp->rd_data.ns_record.name = strdup(rdata);
 			break;
 		default:
 			free(tmp);
@@ -521,10 +526,56 @@ struct ResourceRecord  *ResourceRecord_Init(const char *name, uint32_t type)
 	tmp = malloc(sizeof(struct ResourceRecord));
 	memset(tmp, 0, sizeof(struct ResourceRecord));
 	tmp->name = strdup(name);
-	tmp->origin = NULL;
 	tmp->type = type;
 	tmp->class = 0x0001;
 	tmp->next = NULL;
+	return tmp;
+}
+
+void ResourceRecord_Debug(struct ResourceRecord  *rr)
+{
+	printf("ResourceRecord_Debug >> %s %s\n", rr->name, inet_ntoa(rr->rd_data.a_record.addr));
+}
+
+struct ResourceRecord  *ResourceRecord_Dump(struct ResourceRecord  *rr)
+{
+	int		i = 0;
+	struct ResourceRecord *tmp = NULL;
+	tmp = malloc(sizeof(struct ResourceRecord));
+	memset(tmp, 0, sizeof(struct ResourceRecord));
+	tmp->name = strdup(rr->name);
+	tmp->class = 0x0001;
+	tmp->type = rr->type;
+	tmp->ttl = rr->ttl;
+	tmp->next = NULL;
+
+	ResourceRecord_Debug(rr);
+
+	switch (rr->type)
+	{
+		case RR_A:
+			tmp->rd_length = 4;
+			tmp->rd_data.a_record.addr = rr->rd_data.a_record.addr;
+			break;
+		case RR_AAAA:
+			tmp->rd_length = 16;
+			for (i = 0; i < 16; i++)
+			{
+				tmp->rd_data.aaaa_record.addr[i] = rr->rd_data.aaaa_record.addr[i];
+			}
+			break;
+		case RR_CNAME:
+			tmp->rd_length = strlen(rr->rd_data.cname_record.name) + 2;
+			tmp->rd_data.cname_record.name = strdup(rr->rd_data.cname_record.name);
+			break;
+		case RR_NS:
+			tmp->rd_length = strlen(rr->rd_data.ns_record.name) + 2;
+			tmp->rd_data.ns_record.name = strdup(rr->rd_data.ns_record.name);
+			break;
+		default:
+			free(tmp);
+			return NULL;
+	}
 	return tmp;
 }
 
@@ -535,9 +586,6 @@ void ResourceRecord_Free(struct ResourceRecord  *rr)
 
 	if (rr->name)
 		free(rr->name);
-
-	if (rr->origin)
-		free(rr->origin);
 
 	switch (rr->type)
 	{
@@ -682,10 +730,10 @@ int Message_Putsoa(struct Message *msg, const char *name, const char *mname, con
 
 // For every question in the message add a appropiate resource record
 // in either section 'answers', 'authorities' or 'additionals'.
-int Message_resolve(struct Message *msg)
+int Message_resolve(struct Message *msg, env_t *env)
 {
 	//struct ResourceRecord* beg;
-	struct ResourceRecord* rr;
+	struct ResourceRecord* rr = NULL;
 	struct Question* q;
 	//int rc;
 
@@ -712,6 +760,10 @@ int Message_resolve(struct Message *msg)
 		type = q->qType;
 		class = q->qClass;
 find_cname:
+		printf("Dnsdb lookup %s\n", qname);
+#if 1
+		rr = Dnsdb_lookup(&env->db, qname);
+#else
 		rr = ResourceRecord_Init(qname, type);
 		if (!rr)
 			return -1;
@@ -721,7 +773,17 @@ find_cname:
 			msg->rcode = RT_NotImp;
 			break;
 		}
-		ResourceRecord_Add(msg, rr);
+
+#endif
+		if (rr != NULL)
+		{
+			ResourceRecord_Add(msg, rr);
+		}
+		else
+		{
+			q = q->next;
+			continue;
+		}
 		if (rr->type != type && rr->type == RR_CNAME)
 		{
 			strcpy(qname, rr->rd_data.cname_record.name);
