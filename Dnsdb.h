@@ -1,7 +1,7 @@
 #ifndef __DNSDB_H
 #define __DNSDB_H
-#include <string.h>
 
+#include "Dns.h"
 #include "list.h"
 
 #define RRLEN	256

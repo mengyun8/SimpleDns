@@ -2,6 +2,7 @@
 #define __CONF_H
 
 #include "list.h"
+#include "Dnsdb.h"
 
 #define 	IPLEN	16
 #define		EXLINES	1024	
@@ -12,6 +13,8 @@ typedef struct env_data_type {
 	FILE		*logfp;
 	char		workdir[MAXLINE];
 	unsigned int	daemon;
+
+	Dnsdb_t		db;
 	/* distory */
 	unsigned int	shutdown;
 } env_t;

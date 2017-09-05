@@ -11,6 +11,7 @@
 #include <stdint.h>
 #include <pthread.h>
 #include <sched.h>
+#include <unistd.h>
 
 #include <event2/event.h>
 #include <event2/event_struct.h>
@@ -18,6 +19,7 @@
 #include "SimpleDns.h"
 #include "conf.h"
 #include "log.h"
+#include "Dns.h"
 
 #define BUF_SIZE 	1500
 #define DOMAINLEN	256
@@ -29,7 +31,7 @@
 void print_hex(uint8_t* buf, size_t len)
 {
 	int i;
-	printf("%u bytes:\n", len);
+	printf("%u bytes:\n", (unsigned int)len);
 	for(i = 0; i < len; ++i)
 		printf("%02x ", buf[i]);
 	printf("\n");
@@ -37,7 +39,6 @@ void print_hex(uint8_t* buf, size_t len)
 
 void print_resource_record(struct ResourceRecord* rr)
 {
-	int i;
 	while(rr)
 	{
 		printf("  ResourceRecord { name '%s', type %u, class %u, ttl %u, rd_length %u, ",
@@ -61,12 +62,12 @@ void print_resource_record(struct ResourceRecord* rr)
 				printf(" }");
 				break;
 			case RR_NS:
-				printf("Name Server Resource Record { name %u}",
+				printf("Name Server Resource Record { name %s}",
 					rd->ns_record.name
 				);
 				break;
 			case RR_CNAME:
-				printf("Canonical Name Resource Record { name %u}",
+				printf("Canonical Name Resource Record { name %s}",
 					rd->cname_record.name
 				);
 				break;
@@ -198,7 +199,7 @@ void putcname(uint8_t** buffer, const uint8_t* domain)
 	int len = 0;
 	int i = 0;
 
-	while(pos = strchr(beg, '.'))
+	while ((pos = (uint8_t*)strchr((char *)beg, '.')) != NULL)
 	{
 		len = pos - beg;
 		buf[i] = len;
@@ -208,7 +209,7 @@ void putcname(uint8_t** buffer, const uint8_t* domain)
 
 		beg = pos + 1;
 	}
-	len = strlen(domain) - (beg - domain);
+	len = (int)(strlen((char *)domain) - (beg - domain));
 
 	buf[i] = len;
 	i += 1;
@@ -254,7 +255,7 @@ char* decode_domain_name(const uint8_t** buffer)
 
 	*buffer += i + 1; //also jump over the last 0
 
-	return strdup(name);
+	return strdup((char *)name);
 }
 
 // foo.bar.com => 3foo3bar3com0
@@ -266,7 +267,7 @@ void encode_domain_name(uint8_t** buffer, const uint8_t* domain)
 	int len = 0;
 	int i = 0;
 
-	while(pos = strchr(beg, '.'))
+	while((pos = (uint8_t *)strchr((char *)beg, '.')) != NULL)
 	{
 		len = pos - beg;
 		buf[i] = len;
@@ -277,7 +278,7 @@ void encode_domain_name(uint8_t** buffer, const uint8_t* domain)
 		beg = pos + 1;
 	}
 
-	len = strlen(domain) - (beg - domain);
+	len = strlen((char *)domain) - (beg - domain);
 
 	buf[i] = len;
 	i += 1;
@@ -333,7 +334,7 @@ void Question_init(struct Question *que)
 
 void Message_unpackage(struct Message *msg, const uint8_t *buffer, size_t *len)
 {
-	char name[DOMAINLEN];
+	//char name[DOMAINLEN];
 	int i;
 	struct Question	*q = NULL;
 
@@ -378,7 +379,7 @@ void Message_unpackage(struct Message *msg, const uint8_t *buffer, size_t *len)
 	uint8_t  opt_version;
 	uint16_t opt_flags;
 	uint16_t opt_rdlen;
-	uint16_t opt_nsid;
+	//uint16_t opt_nsid;
 	uint8_t  opt_rcode;
 
 	uint16_t opt_code;
@@ -504,6 +505,16 @@ int ResourceRecord_Resolve(struct ResourceRecord* rr)
 	return 0;
 }
 
+struct ResourceRecord  *ResourceRecord_Create(void)
+{
+	struct ResourceRecord *tmp = NULL;
+	tmp = malloc(sizeof(struct ResourceRecord));
+	memset(tmp, 0, sizeof(struct ResourceRecord));
+	tmp->class = 0x0001;
+	tmp->next = NULL;
+	return tmp;
+}
+
 struct ResourceRecord  *ResourceRecord_Init(const char *name, uint32_t type)
 {
 	struct ResourceRecord *tmp = NULL;
@@ -623,7 +634,7 @@ int ResourceRecord_Add(struct Message *msg, struct ResourceRecord *rr)
 
 int  Message_Putrr(struct Message *msg, const char *name, uint32_t type, const char *rdata, uint32_t ttl)
 {
-	int	rc = 0;
+	//int	rc = 0;
 	struct ResourceRecord *rr = ResourceRecord_Init(name, type);
 	if (!rr)
 		return -1;
@@ -655,7 +666,7 @@ int  Message_Putrr(struct Message *msg, const char *name, uint32_t type, const c
 
 int Message_Putsoa(struct Message *msg, const char *name, const char *mname, const char *rname, uint32_t serial)
 {
-	int	rc = 0;
+	//int	rc = 0;
 	struct ResourceRecord *rr = ResourceRecord_Init(name, RR_SOA);
 	if (!rr)
 		return -1;
@@ -674,10 +685,10 @@ int Message_Putsoa(struct Message *msg, const char *name, const char *mname, con
 // in either section 'answers', 'authorities' or 'additionals'.
 int Message_resolve(struct Message *msg)
 {
-	struct ResourceRecord* beg;
+	//struct ResourceRecord* beg;
 	struct ResourceRecord* rr;
 	struct Question* q;
-	int rc;
+	//int rc;
 
 	char		qname[256] = {0};
 	uint16_t	type = 0;
@@ -727,15 +738,15 @@ int encode_resource_records(struct ResourceRecord* rr, uint8_t** buffer)
 {
 	int i;
 	uint32_t A_addr;
-	uint64_t AAAA_addr;
+	//uint64_t AAAA_addr;
 	while (rr)
 	{
 		/* Answer questions by attaching resource sections. */
-		putcname(buffer, rr->name);
-		put16bits(buffer, rr->type);
-		put16bits(buffer, rr->class);
-		put32bits(buffer, rr->ttl);
-		put16bits(buffer, rr->rd_length);
+		putcname(buffer, (uint8_t *)rr->name);
+		put16bits(buffer, (uint16_t)rr->type);
+		put16bits(buffer, (uint16_t)rr->class);
+		put32bits(buffer, (uint32_t)rr->ttl);
+		put16bits(buffer, (uint16_t)rr->rd_length);
 		
 		switch (rr->type)
 		{
@@ -748,14 +759,14 @@ int encode_resource_records(struct ResourceRecord* rr, uint8_t** buffer)
 					put8bits(buffer, rr->rd_data.aaaa_record.addr[i]);
 				break;
 			case RR_CNAME:
-				putcname(buffer, rr->rd_data.cname_record.name);
+				putcname(buffer, (uint8_t *)rr->rd_data.cname_record.name);
 				break;
 			case RR_NS:
-				putcname(buffer, rr->rd_data.ns_record.name);
+				putcname(buffer, (uint8_t *)rr->rd_data.ns_record.name);
 				break;
 			case RR_SOA:
-				putcname(buffer, rr->rd_data.soa_record.MName);   /* Author Name Server */
-				putcname(buffer, rr->rd_data.soa_record.RName);  /* mail of DNS */
+				putcname(buffer, (uint8_t *)rr->rd_data.soa_record.MName);   /* Author Name Server */
+				putcname(buffer, (uint8_t *)rr->rd_data.soa_record.RName);  /* mail of DNS */
 				put32bits(buffer, rr->rd_data.soa_record.serial);   /* serial */
 				put32bits(buffer, rr->rd_data.soa_record.refresh); /* refresh */
 				put32bits(buffer, rr->rd_data.soa_record.retry); /* retry */
@@ -782,7 +793,7 @@ int Message_encode(struct Message* msg, uint8_t** buffer)
 	q = msg->questions;
 	while(q)
 	{
-		encode_domain_name(buffer, q->qName);
+		encode_domain_name(buffer, (uint8_t *)q->qName);
 		put16bits(buffer, q->qType);
 		put16bits(buffer, q->qClass);
 
@@ -841,12 +852,11 @@ void Message_free(struct Message *msg)
 	free_resource_records(msg->additionals);
 }
 
-void Message_package(struct Message *msg, const uint8_t *data, size_t *len)
+void Message_package(struct Message *msg, const uint8_t *data, uint32_t *len)
 {
-	uint8_t *p = (char *)data;
+	uint8_t *p = (uint8_t *)data;
 	if (Message_encode(msg, &p) != 0) 
 	{
-		*len = -1;
 		return;
 	}
 	*len = ((char *)p - (char *)data);
@@ -856,9 +866,9 @@ void do_accept(evutil_socket_t sockfd, short event_type, void *arg)
 {
 	struct Message msg;
 	int	sock = sockfd;
-	int nbytes, rc, buflen;
+	int nbytes, buflen;
 	uint8_t buffer[BUF_SIZE];
-	struct event_base *base = (struct event_base *)arg;
+	//struct event_base *base = (struct event_base *)arg;
 	struct sockaddr_in client_addr;
 	socklen_t addr_len = sizeof(struct sockaddr_in);
 	Message_init(&msg);
@@ -867,7 +877,7 @@ void do_accept(evutil_socket_t sockfd, short event_type, void *arg)
 
 	Message_unpackage(&msg, buffer, (size_t *)&nbytes);
 	Message_resolve(&msg);
-	Message_package(&msg, buffer, (size_t *)&buflen);
+	Message_package(&msg, buffer, (uint32_t *)&buflen);
 
 	sendto(sock, buffer, buflen, 0, (struct sockaddr*) &client_addr, addr_len);
 	Message_free(&msg);
