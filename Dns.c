@@ -692,6 +692,28 @@ void ResourceRecord_add_Author(struct Message *msg, struct ResourceRecord* rr)
 	msg->nsCount ++;
 }
 
+void ResourceRecord_Add_addition(struct Message *msg, struct ResourceRecord *rr)
+{
+	struct ResourceRecord *new = NULL;
+	struct ResourceRecord *tmp = NULL;
+	tmp = msg->additionals;
+
+	new = ResourceRecord_Dump(rr);
+	if (!tmp)
+	{
+		msg->additionals = new;
+	}
+	else
+	{
+		while (tmp->next)
+		{
+			tmp = tmp->next;
+		}
+		tmp->next = new;
+	}
+	msg->arCount ++;
+}
+
 int ResourceRecord_Add(struct Message *msg, struct ResourceRecord *rr)
 {
 	struct ResourceRecord *tmp = rr;
@@ -767,6 +789,7 @@ int Message_resolve(struct Message *msg, env_t *env)
 	char			qname[256] = {0};
 	uint16_t		type = 0;
 	uint16_t		class = 0;
+	unsigned int		addition = 0;
 
 	// leave most values intact for response
 	msg->qr = 1; // this is a response
@@ -802,7 +825,14 @@ retry_find:
 #endif
 		if (rr != NULL)
 		{
-			ResourceRecord_Add(msg, rr);
+			if (addition == 1)
+			{
+				ResourceRecord_Add_addition(msg, rr);
+			}
+			else
+			{
+				ResourceRecord_Add(msg, rr);
+			}
 		}
 		else
 		{
@@ -819,6 +849,7 @@ retry_find:
 		{
 			strcpy(qname, rr->rd_data.ns_record.name);
 			ResourceRecord_Clean(rr);
+			addition = 1;
 			goto retry_find;
 		}
 		ResourceRecord_Clean(rr);
