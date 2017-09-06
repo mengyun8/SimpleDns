@@ -132,6 +132,7 @@ union ResourceData {
 /* Resource Record Section */
 struct ResourceRecord {
 	char 	*name;
+	char	*origin;
 	uint16_t type;
 	uint16_t class;
 	uint32_t ttl;
@@ -184,7 +185,8 @@ typedef struct env_data_type {
 	unsigned int	shutdown;
 } env_t;
 
-struct ResourceRecord  *ResourceRecord_Create(const char *name, uint32_t type, uint32_t ttl, const char *rdata);
+struct ResourceRecord  *ResourceRecord_Create(const char *name, const char *origin, uint32_t type, uint32_t ttl, const char *rdata);
+void ResourceRecord_Debug(struct ResourceRecord  *rr);
 struct ResourceRecord  *ResourceRecord_Init(const char *name, uint32_t type);
 struct ResourceRecord  *ResourceRecord_Dump(struct ResourceRecord  *rr);
 struct ResourceRecord  *ResourceRecord_Soa_init(const char *name, const char *mname, const char *rname, uint32_t serial);

@@ -481,12 +481,13 @@ int ResourceRecord_Resolve(struct ResourceRecord* rr)
 	return 0;
 }
 
-struct ResourceRecord  *ResourceRecord_Create(const char *name, uint32_t type, uint32_t ttl, const char *rdata)
+struct ResourceRecord  *ResourceRecord_Create(const char *name, const char *origin, uint32_t type, uint32_t ttl, const char *rdata)
 {
 	struct ResourceRecord *tmp = NULL;
 	tmp = malloc(sizeof(struct ResourceRecord));
 	memset(tmp, 0, sizeof(struct ResourceRecord));
 	tmp->name = strdup(name);
+	tmp->origin = strdup(origin);
 	tmp->class = 0x0001;
 	tmp->type = type;
 	tmp->ttl = ttl;
@@ -535,7 +536,18 @@ struct ResourceRecord  *ResourceRecord_Init(const char *name, uint32_t type)
 
 void ResourceRecord_Debug(struct ResourceRecord  *rr)
 {
-	printf("ResourceRecord_Debug >> %s %s\n", rr->name, inet_ntoa(rr->rd_data.a_record.addr));
+	if (rr->type == RR_A)
+	{
+		printf("ResourceRecord_Debug >> A %s %s\n", rr->name, inet_ntoa(rr->rd_data.a_record.addr));
+	}
+	else if (rr->type == RR_NS)
+	{
+		printf("ResourceRecord_Debug >> NS %s %s\n", rr->name, rr->rd_data.ns_record.name);
+	}
+	else if (rr->type == RR_CNAME)
+	{
+		printf("ResourceRecord_Debug >> CNAME %s %s\n", rr->name, rr->rd_data.cname_record.name);
+	}
 }
 
 struct ResourceRecord  *ResourceRecord_Dump(struct ResourceRecord  *rr)
@@ -545,6 +557,7 @@ struct ResourceRecord  *ResourceRecord_Dump(struct ResourceRecord  *rr)
 	tmp = malloc(sizeof(struct ResourceRecord));
 	memset(tmp, 0, sizeof(struct ResourceRecord));
 	tmp->name = strdup(rr->name);
+	tmp->origin = strdup(rr->origin);
 	tmp->class = 0x0001;
 	tmp->type = rr->type;
 	tmp->ttl = rr->ttl;
@@ -583,9 +596,10 @@ void ResourceRecord_Free(struct ResourceRecord  *rr)
 {
 	if (!rr)
 		return;
-
 	if (rr->name)
 		free(rr->name);
+	if (rr->origin)
+		free(rr->origin);
 
 	switch (rr->type)
 	{
@@ -609,6 +623,16 @@ void ResourceRecord_Free(struct ResourceRecord  *rr)
 	free(rr);
 }
 
+void ResourceRecord_Clean(struct ResourceRecord  *rr)
+{
+	struct ResourceRecord  *tmp = rr;
+	while (tmp)
+	{
+		ResourceRecord_Free(tmp);
+		tmp = tmp->next;
+	}
+}
+
 struct ResourceRecord  *ResourceRecord_Soa_init(const char *name, const char *mname, const char *rname, uint32_t serial)
 {
 	struct ResourceRecord *rr = malloc(sizeof(struct ResourceRecord));
@@ -626,12 +650,14 @@ struct ResourceRecord  *ResourceRecord_Soa_init(const char *name, const char *mn
 
 void ResourceRecord_Add_Answer(struct Message *msg, struct ResourceRecord* rr)
 {
+	struct ResourceRecord *new = NULL;
 	struct ResourceRecord *tmp = NULL;
 	tmp = msg->answers;
 
+	new = ResourceRecord_Dump(rr);
 	if (!tmp)
 	{
-		msg->answers = rr;
+		msg->answers = new;
 	}
 	else
 	{
@@ -639,20 +665,21 @@ void ResourceRecord_Add_Answer(struct Message *msg, struct ResourceRecord* rr)
 		{
 			tmp = tmp->next;
 		}
-		tmp->next = rr;
+		tmp->next = new;
 	}
 	msg->anCount ++;
 }
 
-
 void ResourceRecord_add_Author(struct Message *msg, struct ResourceRecord* rr)
 {
+	struct ResourceRecord *new = NULL;
 	struct ResourceRecord *tmp = NULL;
 	tmp = msg->authorities;
 
+	new = ResourceRecord_Dump(rr);
 	if (!tmp)
 	{
-		msg->authorities = rr;
+		msg->authorities = new;
 	}
 	else
 	{
@@ -660,21 +687,26 @@ void ResourceRecord_add_Author(struct Message *msg, struct ResourceRecord* rr)
 		{
 			tmp = tmp->next;
 		}
-		tmp->next = rr;
+		tmp->next = new;
 	}
 	msg->nsCount ++;
 }
 
-
 int ResourceRecord_Add(struct Message *msg, struct ResourceRecord *rr)
 {
-	if (rr->type == RR_SOA)
+	struct ResourceRecord *tmp = rr;
+
+	while (tmp)
 	{
-		ResourceRecord_add_Author(msg, rr);
-	}
-	else if (rr->type == RR_A || rr->type == RR_AAAA|| rr->type == RR_NS || rr->type == RR_CNAME)
-	{
-		ResourceRecord_Add_Answer(msg, rr);
+		if (tmp->type == RR_SOA)
+		{
+			ResourceRecord_add_Author(msg, tmp);
+		}
+		else if (tmp->type == RR_A || tmp->type == RR_AAAA|| tmp->type == RR_NS || tmp->type == RR_CNAME)
+		{
+			ResourceRecord_Add_Answer(msg, tmp);
+		}
+		tmp = tmp->next;
 	}
 	return 0;
 }
@@ -749,14 +781,15 @@ int Message_resolve(struct Message *msg, env_t *env)
 	q = msg->questions;
 	while (q)
 	{
-		log(LOG_INFO, "Got Request from %s %s", q->qName, inet_ntoa(msg->cliaddr));
+//		log(LOG_INFO, "Got Request from %s %s", q->qName, inet_ntoa(msg->cliaddr));
 		strcpy(qname, q->qName);
 		type = q->qType;
 		class = q->qClass;
-find_cname:
-//		printf(" ---  Dnsdb lookup %s\n", qname);
+retry_find:
+		printf(" ---  Dnsdb lookup %s\n", qname);
 #if 1
 		rr = Dnsdb_lookup(&env->db, qname);
+		printf("Got %d\n", rr->type);
 #else
 		rr = ResourceRecord_Init(qname, type);
 		if (!rr)
@@ -780,8 +813,16 @@ find_cname:
 		if (rr->type != type && rr->type == RR_CNAME)
 		{
 			strcpy(qname, rr->rd_data.cname_record.name);
-			goto find_cname;
+			ResourceRecord_Clean(rr);
+			goto retry_find;
 		}
+		else if (rr->type != type && rr->type == RR_NS)
+		{
+			strcpy(qname, rr->rd_data.ns_record.name);
+			ResourceRecord_Clean(rr);
+			goto retry_find;
+		}
+		ResourceRecord_Clean(rr);
 		q = q->next;
 	}
 	return 0;
@@ -795,7 +836,14 @@ int encode_resource_records(struct ResourceRecord* rr, uint8_t** buffer)
 	while (rr)
 	{
 		/* Answer questions by attaching resource sections. */
-		putcname(buffer, (uint8_t *)rr->name);
+		if (rr->type == RR_NS && strcmp(rr->name, "@") == 0)
+		{
+			putcname(buffer, (uint8_t *)rr->origin);
+		}
+		else
+		{
+			putcname(buffer, (uint8_t *)rr->name);
+		}
 		put16bits(buffer, (uint16_t)rr->type);
 		put16bits(buffer, (uint16_t)rr->class);
 		put32bits(buffer, (uint32_t)rr->ttl);
@@ -841,7 +889,6 @@ int Message_encode(struct Message* msg, uint8_t** buffer)
 	int rc;
 
 	Message_encode_header(msg, buffer);
-
 	q = msg->questions;
 	while(q)
 	{
@@ -864,7 +911,8 @@ void free_resource_records(struct ResourceRecord* rr)
 {
 	struct ResourceRecord* next;
 
-	while(rr) {
+	while(rr) 
+	{
 		next = rr->next;
 		ResourceRecord_Free(rr);
 		rr = next;
@@ -875,7 +923,8 @@ void free_questions(struct Question* qq)
 {
 	struct Question* next;
 
-	while(qq) {
+	while(qq) 
+	{
 		free(qq->qName);
 		next = qq->next;
 		free(qq);

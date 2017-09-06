@@ -191,7 +191,7 @@ int Zone_load(Zone_t *zone, const char *name, const char *zonebuf)
 	val_free(&val);
 	log(LOG_INFO, "Insert         name:%s type:%d data:[%s] ttl:%ld\n", rname, type, rdata, ttl);
 	strcpy(zone->name, rname);
-	zone->rr = ResourceRecord_Create(rname, type, ttl, rdata);
+	zone->rr = ResourceRecord_Create(rname, name, type, ttl, rdata);
 	return 0;
 }
 
@@ -336,7 +336,9 @@ int Dnsdb_lookup_origin(Dnsdb_t *db, const char *name, char *origin)
 struct ResourceRecord  *Domain_findzone(Domain_t *domain, const char *name)
 {			
 	struct list_head        *pos = NULL;
-	struct ResourceRecord  *rr = NULL;
+	struct ResourceRecord   *rr = NULL;
+//	struct ResourceRecord   *soarr = NULL;
+	struct ResourceRecord   *nsrr = NULL;
 	Zone_t			*tmp = NULL;
 
 	list_for_each(pos, &(domain->zone.list))
@@ -346,6 +348,20 @@ struct ResourceRecord  *Domain_findzone(Domain_t *domain, const char *name)
 		{
 			rr = ResourceRecord_Dump(tmp->rr);
 		}
+		else if (strcmp("@", tmp->name) == 0 && tmp->rr)
+		{
+			nsrr = ResourceRecord_Dump(tmp->rr);
+			ResourceRecord_Debug(nsrr);
+		}
+	}
+	if (rr)
+	{
+		nsrr = rr->next;
+		rr->next = nsrr;
+	}
+	else
+	{
+		rr = nsrr;
 	}
 	return rr;
 }
@@ -367,7 +383,6 @@ struct ResourceRecord  *Dnsdb_lookup_record(Dnsdb_t *db, const char *origin, con
 		strncpy(relativename, name, p - name);
 	}
 #endif
-                                                      
 	list_for_each(pos, &(db->domain.list))
 	{
 		tmp = list_entry(pos, Domain_t, list);
