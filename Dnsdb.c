@@ -351,7 +351,7 @@ struct ResourceRecord  *Domain_findzone(Domain_t *domain, const char *name)
 		else if (strcmp("@", tmp->name) == 0 && tmp->rr)
 		{
 			nsrr = ResourceRecord_Dump(tmp->rr);
-			ResourceRecord_Debug(nsrr);
+			//ResourceRecord_Debug(nsrr);
 		}
 	}
 	if (rr)

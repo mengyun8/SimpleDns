@@ -786,10 +786,9 @@ int Message_resolve(struct Message *msg, env_t *env)
 		type = q->qType;
 		class = q->qClass;
 retry_find:
-		printf(" ---  Dnsdb lookup %s\n", qname);
+//		printf(" ---  Dnsdb lookup %s\n", qname);
 #if 1
 		rr = Dnsdb_lookup(&env->db, qname);
-		printf("Got %d\n", rr->type);
 #else
 		rr = ResourceRecord_Init(qname, type);
 		if (!rr)
