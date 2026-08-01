@@ -14,7 +14,30 @@ install:
 	yes|cp SimpleDns.conf /etc/
 	mkdir -p /var/SimpleDns/ && yes|cp test.com.zone /var/SimpleDns/
 
+.PHONY: test-all test edge sim bench
+
+# Run XDP test suite (unit + edge + kernel simulation)
+test-all:
+	cd xdp && $(MAKE) test-all
+
+# Run XDP unit tests only
+test:
+	cd xdp && $(MAKE) test
+
+# Run XDP DNS protocol edge case tests
+edge:
+	cd xdp && $(MAKE) edge
+
+# Run XDP kernel logic simulation tests
+sim:
+	cd xdp && $(MAKE) sim
+
+# Build XDP performance benchmark tool
+bench:
+	cd xdp && $(MAKE) bench
+
 clean:
 	rm -f $(target) $(objects)
+	cd xdp && $(MAKE) clean
 
 

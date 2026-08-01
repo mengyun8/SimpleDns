@@ -8,5 +8,8 @@ $TTL    86400
 
 @    	300    IN    NS         ns
 ns    	300    IN    A          192.168.10.79
+ns    	300    IN    AAAA       2001:db8::1
 aaa    	200    IN    A    	1.2.3.4
 www    	200    IN    A    	2.3.4.4
+www    	200    IN    AAAA       2001:db8::2
+cname   200    IN    CNAME      www
