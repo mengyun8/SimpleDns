@@ -1,0 +1,19 @@
+# Object files
+*.o
+
+# Build output
+build/
+dist/
+
+# Legacy build artifacts
+legacy/*.o
+legacy/SimpleDns
+
+# macOS debug symbols
+*.dSYM/
+
+# Editor files
+*.swp
+*.swo
+*~
+.DS_Store

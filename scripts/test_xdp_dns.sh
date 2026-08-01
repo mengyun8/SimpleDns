@@ -1,20 +1,21 @@
 #!/bin/bash
 #
-# XDP DNS - Local Test Script
+# SimpleDns XDP - Local Test Script
 #
 # This script runs on both macOS and Linux:
 #   1. Builds the test program
 #   2. Runs unit tests (validates DNS protocol logic)
-#   3. Starts a standalone DNS server on port 5353
+#   3. Starts a standalone DNS server on port 15353
 #   4. Tests it with dig (if available)
 #
-# Usage: ./test_xdp_dns.sh
+# Usage: ./scripts/test_xdp_dns.sh
 #
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ZONEFILE="$SCRIPT_DIR/../test.com.zone"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ZONEFILE="$PROJECT_DIR/conf/test.com.zone"
 ORIGIN="test.com"
 TEST_PORT=15353
 
@@ -23,9 +24,14 @@ echo "  SimpleDns XDP - Local Test Suite"
 echo "============================================"
 echo ""
 
+# Detect current platform (must match Makefile logic)
+DETECTED_OS=$(uname -s | tr A-Z a-z)
+DETECTED_ARCH=$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/')
+CURRENT_TARGET="${DETECTED_OS}-${DETECTED_ARCH}"
+
 # --- Step 1: Build test program ---
-echo "[1/4] Building test program..."
-cd "$SCRIPT_DIR"
+echo "[1/4] Building test program (target: $CURRENT_TARGET)..."
+cd "$PROJECT_DIR"
 make test 2>&1 || {
     echo "BUILD FAILED"
     exit 1
@@ -39,7 +45,17 @@ echo "[2/4] Starting standalone DNS server on port $TEST_PORT..."
 lsof -ti :$TEST_PORT | xargs kill -9 2>/dev/null || true
 sleep 0.5
 
-./xdp_dns_test -s "$ZONEFILE" "$ORIGIN" &
+# Find the test binary (prefer current platform, fallback to any)
+TEST_BIN="build/$CURRENT_TARGET/simpledns-test"
+if [ ! -f "$TEST_BIN" ]; then
+    TEST_BIN=$(find build -name "simpledns-test" -type f 2>/dev/null | head -1)
+fi
+if [ -z "$TEST_BIN" ] || [ ! -f "$TEST_BIN" ]; then
+    echo "ERROR: test binary not found"
+    exit 1
+fi
+
+"$TEST_BIN" -s "$ZONEFILE" "$ORIGIN" &
 SERVER_PID=$!
 sleep 1
 
@@ -101,7 +117,6 @@ fi
 # --- Step 4: Stop server and summary ---
 echo "[4/4] Stopping server..."
 kill $SERVER_PID 2>/dev/null || true
-# Wait up to 3 seconds for graceful shutdown, then force kill
 for i in 1 2 3; do
     kill -0 $SERVER_PID 2>/dev/null || break
     sleep 1
@@ -114,6 +129,6 @@ echo "  Test suite complete"
 echo "============================================"
 echo ""
 echo "Next steps:"
-echo "  - On Linux: run 'make all' and 'sudo make run IF=eth0'"
-echo "  - On macOS: use 'make docker' for containerized BPF build"
-echo "  - View source: xdp_dns_kern.c (BPF), xdp_dns_user.c (loader)"
+echo "  - Run all tests: make test-all"
+echo "  - On Linux: make all && sudo ./build/*/simpledns-xdp -i eth0 -z conf/test.com.zone -o test.com -v"
+echo "  - On macOS: make docker for containerized BPF build"

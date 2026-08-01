@@ -7,6 +7,8 @@ RUN apt-get update && apt-get install -y \
     libelf-dev \
     zlib1g-dev \
     gcc \
+    gcc-aarch64-linux-gnu \
+    gcc-x86-64-linux-gnu \
     make \
     iproute2 \
     dnsutils \
